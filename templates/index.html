@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Dart Scorer</title>
+  </head>
+  <body>
+    <h1>AI Dart Scorer</h1>
+
+    <input type="file" id="fileInput" accept="image/*" />
+    <div>
+      <img id="preview" alt="Selected image preview" style="display: none; max-width: 100%; height: auto;" />
+    </div>
+
+    <script>
+      const fileInput = document.getElementById("fileInput");
+      const preview = document.getElementById("preview");
+      let previewUrl = null;
+
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          preview.style.display = "none";
+          preview.removeAttribute("src");
+          if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            previewUrl = null;
+          }
+          return;
+        }
+
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        previewUrl = URL.createObjectURL(file);
+        preview.src = previewUrl;
+        preview.style.display = "block";
+      });
+    </script>
+  </body>
+</html>
