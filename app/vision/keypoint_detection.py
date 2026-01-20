@@ -105,6 +105,69 @@ def _filter_in_bounds(points: Sequence[PointF], width: int, height: int) -> List
     return kept
 
 
+def _line_border_points(rho: float, theta: float, width: int, height: int) -> List[Tuple[int, int]]:
+    """Return up to 2 intersection points between the line and the image border."""
+    pts: List[Tuple[int, int]] = []
+    ct, st = math.cos(theta), math.sin(theta)
+
+    if abs(st) > 1e-6:
+        y0 = (rho - 0.0 * ct) / st
+        y1 = (rho - (width - 1.0) * ct) / st
+        if 0.0 <= y0 <= height - 1.0:
+            pts.append((0, int(round(y0))))
+        if 0.0 <= y1 <= height - 1.0:
+            pts.append((width - 1, int(round(y1))))
+
+    if abs(ct) > 1e-6:
+        x0 = (rho - 0.0 * st) / ct
+        x1 = (rho - (height - 1.0) * st) / ct
+        if 0.0 <= x0 <= width - 1.0:
+            pts.append((int(round(x0)), 0))
+        if 0.0 <= x1 <= width - 1.0:
+            pts.append((int(round(x1)), height - 1))
+
+    uniq: List[Tuple[int, int]] = []
+    for p in pts:
+        if p not in uniq:
+            uniq.append(p)
+    return uniq[:2]
+
+
+def _draw_overlay(
+    img_bgr: np.ndarray,
+    points: Sequence[PointF],
+    lines: Sequence[dict],
+    ellipse: Optional[Ellipse],
+    *,
+    draw_points: bool,
+    draw_lines: bool,
+    draw_ellipse: bool,
+) -> np.ndarray:
+    overlay = img_bgr.copy()
+    h, w = overlay.shape[:2]
+
+    if draw_lines:
+        for line in lines:
+            rho = float(line["rho"])
+            theta = float(line["theta_rad"])
+            pts = _line_border_points(rho, theta, w, h)
+            if len(pts) == 2:
+                cv2.line(overlay, pts[0], pts[1], (0, 255, 0), 1)
+
+    if draw_ellipse and ellipse is not None:
+        (cx, cy), (major, minor), angle = ellipse
+        axes = (int(round(major * 0.5)), int(round(minor * 0.5)))
+        center = (int(round(cx)), int(round(cy)))
+        if axes[0] > 0 and axes[1] > 0:
+            cv2.ellipse(overlay, center, axes, float(angle), 0, 360, (0, 0, 255), 1)
+
+    if draw_points:
+        for x, y in points:
+            cv2.circle(overlay, (int(round(x)), int(round(y))), 4, (0, 255, 255), -1)
+
+    return overlay
+
+
 def compute_keypoints(
     img_bgr: np.ndarray,
     *,
@@ -112,6 +175,9 @@ def compute_keypoints(
     line_cfg: Optional[DetectConfig] = None,
     ellipse_cfg: Optional[EllipseDetectConfig] = None,
     kp_cfg: Optional[KeypointConfig] = None,
+    overlay_points: bool = True,
+    overlay_lines: bool = False,
+    overlay_circles: bool = False,
 ) -> dict:
     """
     Pipeline:
@@ -120,6 +186,7 @@ def compute_keypoints(
       3) Apply red/green mask to the original image
       4) Detect the outer ellipse on the red/green mask
       5) Intersect lines with ellipse to get keypoints
+      6) Optional overlay for points, lines, and ellipse
     """
     if img_bgr is None:
         return {"keypoints": [], "overlay": None}
@@ -155,9 +222,15 @@ def compute_keypoints(
     points = _filter_in_bounds(points, w, h)
     points = _dedupe_points(points, kp_cfg.dedupe_tol_px)
 
-    overlay = img_bgr.copy()
-    for x, y in points:
-        cv2.circle(overlay, (int(round(x)), int(round(y))), 4, (0, 255, 255), -1)
+    overlay = _draw_overlay(
+        img_bgr,
+        points,
+        lines,
+        ellipse,
+        draw_points=overlay_points,
+        draw_lines=overlay_lines,
+        draw_ellipse=overlay_circles,
+    )
 
     return {
         "keypoints": [{"x": float(x), "y": float(y)} for x, y in points],

@@ -45,13 +45,23 @@ async def transform(file: UploadFile = File(...)):
 
 
 @api.post("/keypoints")
-async def keypoints(file: UploadFile = File(...)):
+async def keypoints(
+    file: UploadFile = File(...),
+    points: bool = True,
+    lines: bool = False,
+    circles: bool = False,
+):
     data = await file.read()
     image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         return JSONResponse({"error": "Invalid image"}, status_code=400)
 
-    result = compute_keypoints(image)
+    result = compute_keypoints(
+        image,
+        overlay_points=points,
+        overlay_lines=lines,
+        overlay_circles=circles,
+    )
     overlay = result.get("overlay")
     if overlay is None:
         return JSONResponse({"error": "No overlay generated"}, status_code=500)

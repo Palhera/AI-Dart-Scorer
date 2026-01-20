@@ -1,17 +1,36 @@
+.preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+}
+
 .preview-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 320px;
+  flex: 1 1 320px;
 }
 
-.preview-wrap + .preview-wrap {
-  margin-top: 16px;
+.overlay-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0 16px;
+}
+
+.overlay-options label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .preview-img {
   display: none;
-  max-width: 640px;
+  max-width: 100%;
   max-height: 480px;
   width: auto;
   height: auto;

@@ -10,16 +10,35 @@
 
     <input type="file" id="fileInput" accept="image/*" />
     <button id="runDetection" type="button" disabled>Run detection</button>
-    <div class="preview-wrap">
-      <img id="preview" class="preview-img" alt="Selected image preview" />
+    <div class="overlay-options" role="group" aria-label="Overlay options">
+      <span>Overlays</span>
+      <label>
+        <input type="checkbox" id="overlayPoints" checked />
+        Points
+      </label>
+      <label>
+        <input type="checkbox" id="overlayLines" />
+        Lines
+      </label>
+      <label>
+        <input type="checkbox" id="overlayCircles" />
+        Circles
+      </label>
     </div>
-    <div class="preview-wrap">
-      <img id="overlay" class="preview-img" alt="Keypoint overlay preview" />
+    <div class="preview-row">
+      <div class="preview-wrap">
+        <img id="preview" class="preview-img" alt="Selected image preview" />
+      </div>
+      <div class="preview-wrap">
+        <img id="overlay" class="preview-img" alt="Overlay preview" />
+      </div>
     </div>
-
     <script>
       const fileInput = document.getElementById("fileInput");
       const runDetection = document.getElementById("runDetection");
+      const overlayPoints = document.getElementById("overlayPoints");
+      const overlayLines = document.getElementById("overlayLines");
+      const overlayCircles = document.getElementById("overlayCircles");
       const preview = document.getElementById("preview");
       const overlay = document.getElementById("overlay");
       let previewUrl = null;
@@ -57,17 +76,27 @@
         overlay.removeAttribute("src");
       });
 
-      runDetection.addEventListener("click", () => {
-        if (!selectedFile) {
+      function runDetectionRequest() {
+        if (!selectedFile || runDetection.disabled) {
           return;
         }
         runDetection.disabled = true;
         const formData = new FormData();
         formData.append("file", selectedFile);
-        fetch("/keypoints", { method: "POST", body: formData })
+        const params = new URLSearchParams({
+          points: overlayPoints.checked ? "1" : "0",
+          lines: overlayLines.checked ? "1" : "0",
+          circles: overlayCircles.checked ? "1" : "0",
+        });
+        fetch(`/keypoints?${params.toString()}`, { method: "POST", body: formData })
           .then((response) => response.json())
           .then((data) => {
             if (data.error) {
+              overlay.style.display = "none";
+              overlay.removeAttribute("src");
+              return;
+            }
+            if (!data.overlay) {
               overlay.style.display = "none";
               overlay.removeAttribute("src");
               return;
@@ -82,6 +111,16 @@
           .finally(() => {
             runDetection.disabled = false;
           });
+      }
+
+      runDetection.addEventListener("click", runDetectionRequest);
+      [overlayPoints, overlayLines, overlayCircles].forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          if (!selectedFile) {
+            return;
+          }
+          runDetectionRequest();
+        });
       });
     </script>
   </body>
