@@ -3,3 +3,5 @@ uvicorn[standard]
 numpy
 jinja2
 python-multipart
+opencv-python
+opencv-python

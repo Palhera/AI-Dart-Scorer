@@ -3,38 +3,85 @@
   <head>
     <meta charset="utf-8" />
     <title>AI Dart Scorer</title>
+    <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
     <h1>AI Dart Scorer</h1>
 
     <input type="file" id="fileInput" accept="image/*" />
-    <div>
-      <img id="preview" alt="Selected image preview" style="display: none; max-width: 100%; height: auto;" />
+    <button id="runDetection" type="button" disabled>Run detection</button>
+    <div class="preview-wrap">
+      <img id="preview" class="preview-img" alt="Selected image preview" />
+    </div>
+    <div class="preview-wrap">
+      <img id="overlay" class="preview-img" alt="Keypoint overlay preview" />
     </div>
 
     <script>
       const fileInput = document.getElementById("fileInput");
+      const runDetection = document.getElementById("runDetection");
       const preview = document.getElementById("preview");
+      const overlay = document.getElementById("overlay");
       let previewUrl = null;
+      let selectedFile = null;
+
+      function clearPreviews() {
+        preview.style.display = "none";
+        overlay.style.display = "none";
+        preview.removeAttribute("src");
+        overlay.removeAttribute("src");
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = null;
+        }
+      }
 
       fileInput.addEventListener("change", () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
-          preview.style.display = "none";
-          preview.removeAttribute("src");
-          if (previewUrl) {
-            URL.revokeObjectURL(previewUrl);
-            previewUrl = null;
-          }
+          selectedFile = null;
+          runDetection.disabled = true;
+          clearPreviews();
           return;
         }
 
+        selectedFile = file;
+        runDetection.disabled = false;
         if (previewUrl) {
           URL.revokeObjectURL(previewUrl);
         }
         previewUrl = URL.createObjectURL(file);
         preview.src = previewUrl;
         preview.style.display = "block";
+        overlay.style.display = "none";
+        overlay.removeAttribute("src");
+      });
+
+      runDetection.addEventListener("click", () => {
+        if (!selectedFile) {
+          return;
+        }
+        runDetection.disabled = true;
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        fetch("/keypoints", { method: "POST", body: formData })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.error) {
+              overlay.style.display = "none";
+              overlay.removeAttribute("src");
+              return;
+            }
+            overlay.src = `data:image/png;base64,${data.overlay}`;
+            overlay.style.display = "block";
+          })
+          .catch(() => {
+            overlay.style.display = "none";
+            overlay.removeAttribute("src");
+          })
+          .finally(() => {
+            runDetection.disabled = false;
+          });
       });
     </script>
   </body>

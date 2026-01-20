@@ -1,0 +1,19 @@
+.preview-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+}
+
+.preview-wrap + .preview-wrap {
+  margin-top: 16px;
+}
+
+.preview-img {
+  display: none;
+  max-width: 640px;
+  max-height: 480px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
