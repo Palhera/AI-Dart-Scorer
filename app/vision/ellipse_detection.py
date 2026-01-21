@@ -7,6 +7,9 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
+from app.vision.vision_types import ImageInput, TransformParams, U8
+from app.vision.vision_utils import decode_base64_image, ensure_bgr_u8, to_3ch
+
 
 Ellipse = Tuple[Tuple[float, float], Tuple[float, float], float]  # ((cx,cy),(major,minor), angle_deg)
 
@@ -18,6 +21,48 @@ class EllipseDetectConfig:
     max_center_offset: float = 0.18       # max distance from image center / min(H,W)
     morph_kernel: int = 5                 # close kernel size (odd recommended)
     close_iters: int = 2                  # close iterations
+
+
+def build_red_green_mask(img_bgr: np.ndarray, params: Optional[TransformParams] = None) -> np.ndarray:
+    """
+    Build a 3-channel (BGR) binary mask for red and green regions in HSV space.
+    """
+    params = params or TransformParams()
+    img_bgr = ensure_bgr_u8(img_bgr)
+
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+
+    low_green = np.array(params.low_green, dtype=U8)
+    high_green = np.array(params.high_green, dtype=U8)
+    low_red_1 = np.array(params.low_red_1, dtype=U8)
+    high_red_1 = np.array(params.high_red_1, dtype=U8)
+    low_red_2 = np.array(params.low_red_2, dtype=U8)
+    high_red_2 = np.array(params.high_red_2, dtype=U8)
+
+    green = cv2.inRange(hsv, low_green, high_green)
+    red1 = cv2.inRange(hsv, low_red_1, high_red_1)
+    red2 = cv2.inRange(hsv, low_red_2, high_red_2)
+
+    mask_u8 = cv2.bitwise_or(green, cv2.bitwise_or(red1, red2))
+    return to_3ch(mask_u8)
+
+
+def detect_outer_ellipse_from_image(
+    image_input: ImageInput,
+    *,
+    params: Optional[TransformParams] = None,
+    cfg: Optional[EllipseDetectConfig] = None,
+) -> Optional[Ellipse]:
+    """
+    Detect the outer ellipse from a BGR image or base64 input.
+    """
+    img_bgr = decode_base64_image(image_input) if isinstance(image_input, str) else image_input
+    if img_bgr is None:
+        return None
+
+    params = params or TransformParams()
+    mask_bgr = build_red_green_mask(img_bgr, params=params)
+    return detect_outer_ellipse(mask_bgr, cfg=cfg)
 
 
 def detect_outer_ellipse(

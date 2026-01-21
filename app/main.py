@@ -8,7 +8,8 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from app.vision.image_transform import build_red_green_mask, build_white_mask
+from app.vision.ellipse_detection import build_red_green_mask
+from app.vision.line_detection import build_white_mask
 from app.vision.keypoint_detection import compute_keypoints
 
 BASE_DIR = Path(__file__).resolve().parent.parent

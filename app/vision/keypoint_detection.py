@@ -7,9 +7,10 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from app.vision.ellipse_detection import EllipseDetectConfig, detect_outer_ellipse
-from app.vision.image_transform import TransformParams, build_red_green_mask, build_white_mask
-from app.vision.line_detection import DetectConfig, detect_lines_from_mask
+from app.vision.ellipse_detection import EllipseDetectConfig, build_red_green_mask, detect_outer_ellipse
+from app.vision.line_detection import DetectConfig, build_white_mask, detect_lines_from_mask
+from app.vision.vision_types import TransformParams
+from app.vision.vision_utils import line_border_points
 
 PointF = Tuple[float, float]
 Ellipse = Tuple[Tuple[float, float], Tuple[float, float], float]
@@ -105,34 +106,6 @@ def _filter_in_bounds(points: Sequence[PointF], width: int, height: int) -> List
     return kept
 
 
-def _line_border_points(rho: float, theta: float, width: int, height: int) -> List[Tuple[int, int]]:
-    """Return up to 2 intersection points between the line and the image border."""
-    pts: List[Tuple[int, int]] = []
-    ct, st = math.cos(theta), math.sin(theta)
-
-    if abs(st) > 1e-6:
-        y0 = (rho - 0.0 * ct) / st
-        y1 = (rho - (width - 1.0) * ct) / st
-        if 0.0 <= y0 <= height - 1.0:
-            pts.append((0, int(round(y0))))
-        if 0.0 <= y1 <= height - 1.0:
-            pts.append((width - 1, int(round(y1))))
-
-    if abs(ct) > 1e-6:
-        x0 = (rho - 0.0 * st) / ct
-        x1 = (rho - (height - 1.0) * st) / ct
-        if 0.0 <= x0 <= width - 1.0:
-            pts.append((int(round(x0)), 0))
-        if 0.0 <= x1 <= width - 1.0:
-            pts.append((int(round(x1)), height - 1))
-
-    uniq: List[Tuple[int, int]] = []
-    for p in pts:
-        if p not in uniq:
-            uniq.append(p)
-    return uniq[:2]
-
-
 def _draw_overlay(
     img_bgr: np.ndarray,
     points: Sequence[PointF],
@@ -150,7 +123,7 @@ def _draw_overlay(
         for line in lines:
             rho = float(line["rho"])
             theta = float(line["theta_rad"])
-            pts = _line_border_points(rho, theta, w, h)
+            pts = line_border_points(rho, theta, w, h)
             if len(pts) == 2:
                 cv2.line(overlay, pts[0], pts[1], (0, 255, 0), 1)
 

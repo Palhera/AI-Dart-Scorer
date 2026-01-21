@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import base64
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from app.vision.image_transform import TransformParams, build_white_mask
+from app.vision.vision_types import ImageInput, TransformParams, U8
+from app.vision.vision_utils import decode_base64_image, ensure_bgr_u8, line_border_points, to_3ch
 
 # Optional dependency: Hungarian assignment for best matching (preferred).
 try:
@@ -17,20 +17,12 @@ except Exception:
     _linear_sum_assignment = None
 
 
-U8 = np.uint8
 F64 = np.float64
 
 # Model: 10 spokes with fixed offsets (pi-periodic angles)
 PHI0_DEG: float = 9.0
 DELTA_DEG: float = 18.0
 PHI_GRID: np.ndarray = (np.deg2rad(PHI0_DEG) + np.deg2rad(DELTA_DEG) * np.arange(10, dtype=F64)) % np.pi
-
-ImageInput = Union[str, np.ndarray]  # base64 string (optionally data URL) OR OpenCV BGR image
-
-
-# ---------------------------
-# Public configuration
-# ---------------------------
 
 @dataclass(frozen=True, slots=True)
 class DetectConfig:
@@ -72,6 +64,99 @@ ScoredLine = Tuple[float, float, float, bool]
 LineRT = Tuple[float, float]
 PointF = Tuple[float, float]
 PointI = Tuple[int, int]
+
+
+# ---------------------------
+# Image transform helpers
+# ---------------------------
+
+def _kernel(params: TransformParams) -> np.ndarray:
+    k = max(1, int(params.morph_kernel))
+    if k == 1:
+        # Morphology with 1x1 is a no-op; still return a valid kernel.
+        return np.ones((1, 1), dtype=U8)
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+
+
+def _filter_small_components(mask_u8: np.ndarray, min_area: int) -> np.ndarray:
+    """Remove connected components with area < min_area. mask_u8 must be 0/255."""
+    if min_area <= 0:
+        return mask_u8
+
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
+    if num_labels <= 1:
+        return mask_u8
+
+    # Labels start at 1; 0 is background.
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    keep_labels = (np.where(areas >= min_area)[0] + 1).astype(np.int32)
+
+    if keep_labels.size == 0:
+        return np.zeros_like(mask_u8)
+
+    # Vectorized membership test. For many labels, using a boolean LUT is faster.
+    lut = np.zeros(num_labels, dtype=U8)
+    lut[keep_labels] = 1
+    kept = lut[labels]  # 0/1
+    return (kept * 255).astype(U8, copy=False)
+
+
+def build_white_mask(img_bgr: np.ndarray, params: Optional[TransformParams] = None) -> np.ndarray:
+    """
+    Build a 3-channel (BGR) binary mask for "white" / high-luminance neutral regions.
+
+    Approach:
+      1) Convert BGR -> LAB
+      2) Identify near-neutral pixels using chroma distance to (a=128,b=128) with Otsu
+      3) Compute an Otsu threshold on L over neutral pixels to separate brighter neutrals
+      4) Morphological open+close
+      5) Remove small connected components (area threshold relative to image size)
+    """
+    params = params or TransformParams()
+    img_bgr = ensure_bgr_u8(img_bgr)
+
+    lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+    l = lab[:, :, 0]  # uint8
+    a = lab[:, :, 1].astype(np.int16)
+    b = lab[:, :, 2].astype(np.int16)
+
+    # Squared chroma distance to neutral (128,128); avoid sqrt for speed.
+    da = a - 128
+    db = b - 128
+    chroma2 = (da * da + db * db).astype(np.uint16)  # fits: max ~ 2*(127^2)=32258
+
+    # Map to uint8 for Otsu; using sqrt is unnecessary; monotonic transform is fine.
+    # Scale down to [0..255] approximately by right-shifting.
+    # 32258 >> 7 ~= 252
+    chroma_u8 = (chroma2 >> 7).astype(U8)
+
+    # Neutral pixels: low chroma
+    _, neutral_mask = cv2.threshold(chroma_u8, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    neutral = neutral_mask.astype(bool)
+
+    neutral_l = l[neutral]
+    if neutral_l.size < params.min_neutral_samples:
+        # Fallback: use the full image if neutral sample is insufficient.
+        neutral_l = l.reshape(-1)
+
+    # Otsu on luminance to get "white" cutoff (high L)
+    # Provide a 1D array as a single-column image.
+    neutral_l_1c = neutral_l.reshape(-1, 1)
+    white_thresh, _ = cv2.threshold(neutral_l_1c, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+    mask_u8 = np.zeros_like(l, dtype=U8)
+    mask_u8[(l >= white_thresh) & neutral] = 255
+
+    k = _kernel(params)
+    if params.open_iters > 0:
+        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, k, iterations=int(params.open_iters))
+    if params.close_iters > 0:
+        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, k, iterations=int(params.close_iters))
+
+    min_area = int(mask_u8.size * float(params.min_area_ratio))
+    mask_u8 = _filter_small_components(mask_u8, min_area=min_area)
+
+    return to_3ch(mask_u8)
 
 
 # ---------------------------
@@ -204,37 +289,6 @@ def _fit_model(obs_deg: Sequence[float], *, fast: bool, max_evals: int) -> dict:
 # Geometry / line helpers
 # ---------------------------
 
-def _line_border_points(rho: float, theta: float, width: int, height: int) -> List[PointI]:
-    """Return up to 2 intersection points between the line and the image border."""
-    pts: List[PointI] = []
-    ct, st = math.cos(theta), math.sin(theta)
-
-    # Intersections with x = 0 and x = width-1
-    if abs(st) > 1e-6:
-        y0 = (rho - 0.0 * ct) / st
-        y1 = (rho - (width - 1.0) * ct) / st
-        if 0.0 <= y0 <= height - 1.0:
-            pts.append((0, int(round(y0))))
-        if 0.0 <= y1 <= height - 1.0:
-            pts.append((width - 1, int(round(y1))))
-
-    # Intersections with y = 0 and y = height-1
-    if abs(ct) > 1e-6:
-        x0 = (rho - 0.0 * st) / ct
-        x1 = (rho - (height - 1.0) * st) / ct
-        if 0.0 <= x0 <= width - 1.0:
-            pts.append((int(round(x0)), 0))
-        if 0.0 <= x1 <= width - 1.0:
-            pts.append((int(round(x1)), height - 1))
-
-    # Remove duplicates, keep first two
-    uniq: List[PointI] = []
-    for p in pts:
-        if p not in uniq:
-            uniq.append(p)
-    return uniq[:2]
-
-
 def _select_unique_lines(
     raw_lines: Optional[np.ndarray],
     *,
@@ -298,7 +352,7 @@ def _line_color_contrast(
     Vectorized for performance.
     """
     h, w = lab_img.shape[:2]
-    pts = _line_border_points(rho, theta, w, h)
+    pts = line_border_points(rho, theta, w, h)
     if len(pts) < 2:
         return 0.0
 
@@ -368,27 +422,6 @@ def _infer_missing_lines(
 # ---------------------------
 # Image decode
 # ---------------------------
-
-def _decode_base64_image(image_b64: str) -> Optional[np.ndarray]:
-    """
-    Decode base64 (optionally data URL) into OpenCV BGR uint8 image.
-    Returns None if decoding fails.
-    """
-    if image_b64.startswith("data:image"):
-        image_b64 = image_b64.split(",", 1)[-1]
-
-    try:
-        raw = base64.b64decode(image_b64, validate=True)
-    except Exception:
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            return None
-
-    data = np.frombuffer(raw, dtype=U8)
-    img = cv2.imdecode(data, cv2.IMREAD_COLOR)
-    return img
-
 
 # ---------------------------
 # Detection core
@@ -505,7 +538,7 @@ def detect_lines_from_image(
         ]
       }
     """
-    img_bgr = _decode_base64_image(image_input) if isinstance(image_input, str) else image_input
+    img_bgr = decode_base64_image(image_input) if isinstance(image_input, str) else image_input
     if img_bgr is None:
         return {"lines": []}
 
