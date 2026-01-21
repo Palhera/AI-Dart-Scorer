@@ -1,32 +1,39 @@
-# AI Darts Scorer
+# AI Dart Scorer
 
-## Project structure
+Minimal FastAPI app that uploads a dartboard image, detects keypoints, and returns an overlay preview.
+
+## Structure
 ```text
-.
-├── .venv/
-├── app/
-│   ├── __init__.py
-│   └── main.py
-├── templates/
-│   └── index.html
-├── requirements.txt
-└── README.md
+app/
+  main.py
+  vision/
+templates/
+  index.html
+static/
+  style.css
+requirements.txt
 ```
 
-## Setup (Linux)
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -U pip
-python3 -m pip install -r requirements.txt
-
-## Setup (Windows)
+## Setup
+```bash
 python -m venv .venv
+
+# Windows
 .\.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+source .venv/bin/activate
+
 python -m pip install -U pip
 python -m pip install -r requirements.txt
+```
 
 ## Run
+```bash
 uvicorn app.main:api --reload
+```
 
-## Run and expose to lan
+## Run and expose to LAN
+```bash
 uvicorn app.main:api --host 0.0.0.0 --port 8000
+```

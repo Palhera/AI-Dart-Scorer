@@ -1,51 +1,18 @@
-from __future__ import annotations
-
-import base64
 import math
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
-import cv2
 import numpy as np
 
-from app.vision.vision_types import U8
 PointI = Tuple[int, int]
 
 
 def ensure_bgr_u8(img_bgr: np.ndarray) -> np.ndarray:
     if img_bgr.ndim != 3 or img_bgr.shape[2] != 3:
         raise ValueError(f"Expected BGR image with shape (H, W, 3), got {img_bgr.shape}.")
-    if img_bgr.dtype != U8:
+    if img_bgr.dtype != np.uint8:
         # OpenCV works best with uint8 for these operations.
-        img_bgr = img_bgr.astype(U8, copy=False)
+        img_bgr = img_bgr.astype(np.uint8, copy=False)
     return img_bgr
-
-
-def to_3ch(mask_u8: np.ndarray) -> np.ndarray:
-    """Convert single-channel uint8 mask to 3-channel BGR mask."""
-    if mask_u8.ndim != 2:
-        raise ValueError(f"Expected single-channel mask, got {mask_u8.shape}.")
-    return cv2.cvtColor(mask_u8, cv2.COLOR_GRAY2BGR)
-
-
-def decode_base64_image(image_b64: str) -> Optional[np.ndarray]:
-    """
-    Decode base64 (optionally data URL) into OpenCV BGR uint8 image.
-    Returns None if decoding fails.
-    """
-    if image_b64.startswith("data:image"):
-        image_b64 = image_b64.split(",", 1)[-1]
-
-    try:
-        raw = base64.b64decode(image_b64, validate=True)
-    except Exception:
-        try:
-            raw = base64.b64decode(image_b64)
-        except Exception:
-            return None
-
-    data = np.frombuffer(raw, dtype=U8)
-    img = cv2.imdecode(data, cv2.IMREAD_COLOR)
-    return img
 
 
 def line_border_points(rho: float, theta: float, width: int, height: int) -> List[PointI]:
@@ -77,6 +44,3 @@ def line_border_points(rho: float, theta: float, width: int, height: int) -> Lis
         if p not in uniq:
             uniq.append(p)
     return uniq[:2]
-
-
-__all__ = ["decode_base64_image", "ensure_bgr_u8", "line_border_points", "to_3ch"]

@@ -41,82 +41,84 @@
       const overlayCircles = document.getElementById("overlayCircles");
       const preview = document.getElementById("preview");
       const overlay = document.getElementById("overlay");
-      let previewUrl = null;
-      let selectedFile = null;
+      const state = { previewUrl: null, file: null };
+
+      function hideImage(img) {
+        img.style.display = "none";
+        img.removeAttribute("src");
+      }
+
+      function showImage(img, src) {
+        img.src = src;
+        img.style.display = "block";
+      }
 
       function clearPreviews() {
-        preview.style.display = "none";
-        overlay.style.display = "none";
-        preview.removeAttribute("src");
-        overlay.removeAttribute("src");
-        if (previewUrl) {
-          URL.revokeObjectURL(previewUrl);
-          previewUrl = null;
+        hideImage(preview);
+        hideImage(overlay);
+        if (state.previewUrl) {
+          URL.revokeObjectURL(state.previewUrl);
+          state.previewUrl = null;
         }
       }
 
       fileInput.addEventListener("change", () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
-          selectedFile = null;
+          state.file = null;
           runDetection.disabled = true;
           clearPreviews();
           return;
         }
 
-        selectedFile = file;
+        state.file = file;
         runDetection.disabled = false;
-        if (previewUrl) {
-          URL.revokeObjectURL(previewUrl);
+        if (state.previewUrl) {
+          URL.revokeObjectURL(state.previewUrl);
         }
-        previewUrl = URL.createObjectURL(file);
-        preview.src = previewUrl;
-        preview.style.display = "block";
-        overlay.style.display = "none";
-        overlay.removeAttribute("src");
+        state.previewUrl = URL.createObjectURL(file);
+        showImage(preview, state.previewUrl);
+        hideImage(overlay);
       });
 
-      function runDetectionRequest() {
-        if (!selectedFile || runDetection.disabled) {
+      async function runDetectionRequest() {
+        if (!state.file || runDetection.disabled) {
           return;
         }
         runDetection.disabled = true;
         const formData = new FormData();
-        formData.append("file", selectedFile);
+        formData.append("file", state.file);
         const params = new URLSearchParams({
-          points: overlayPoints.checked ? "1" : "0",
-          lines: overlayLines.checked ? "1" : "0",
-          circles: overlayCircles.checked ? "1" : "0",
+          points: overlayPoints.checked,
+          lines: overlayLines.checked,
+          circles: overlayCircles.checked,
         });
-        fetch(`/keypoints?${params.toString()}`, { method: "POST", body: formData })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.error) {
-              overlay.style.display = "none";
-              overlay.removeAttribute("src");
-              return;
-            }
-            if (!data.overlay) {
-              overlay.style.display = "none";
-              overlay.removeAttribute("src");
-              return;
-            }
-            overlay.src = `data:image/png;base64,${data.overlay}`;
-            overlay.style.display = "block";
-          })
-          .catch(() => {
-            overlay.style.display = "none";
-            overlay.removeAttribute("src");
-          })
-          .finally(() => {
-            runDetection.disabled = false;
+        try {
+          const response = await fetch(`/keypoints?${params.toString()}`, {
+            method: "POST",
+            body: formData,
           });
+          if (!response.ok) {
+            hideImage(overlay);
+            return;
+          }
+          const data = await response.json();
+          if (!data || !data.overlay) {
+            hideImage(overlay);
+            return;
+          }
+          showImage(overlay, `data:image/png;base64,${data.overlay}`);
+        } catch (error) {
+          hideImage(overlay);
+        } finally {
+          runDetection.disabled = false;
+        }
       }
 
       runDetection.addEventListener("click", runDetectionRequest);
       [overlayPoints, overlayLines, overlayCircles].forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
-          if (!selectedFile) {
+          if (!state.file) {
             return;
           }
           runDetectionRequest();
