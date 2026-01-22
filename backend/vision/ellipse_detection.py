@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from app.vision.vision_utils import ensure_bgr_u8
+from backend.vision.vision_utils import ensure_bgr_u8
 
 Ellipse = Tuple[Tuple[float, float], Tuple[float, float], float]  # ((cx,cy),(major,minor), angle_deg)
 

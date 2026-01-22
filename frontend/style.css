@@ -14,20 +14,6 @@
   flex: 1 1 320px;
 }
 
-.overlay-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  margin: 8px 0 16px;
-}
-
-.overlay-options label {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-
 .preview-img {
   display: none;
   max-width: 100%;

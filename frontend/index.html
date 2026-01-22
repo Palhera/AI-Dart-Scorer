@@ -3,44 +3,26 @@
   <head>
     <meta charset="utf-8" />
     <title>AI Dart Scorer</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/frontend/style.css" />
   </head>
   <body>
     <h1>AI Dart Scorer</h1>
 
     <input type="file" id="fileInput" accept="image/*" />
     <button id="runDetection" type="button" disabled>Run detection</button>
-    <div class="overlay-options" role="group" aria-label="Overlay options">
-      <span>Overlays</span>
-      <label>
-        <input type="checkbox" id="overlayPoints" checked />
-        Points
-      </label>
-      <label>
-        <input type="checkbox" id="overlayLines" />
-        Lines
-      </label>
-      <label>
-        <input type="checkbox" id="overlayCircles" />
-        Circles
-      </label>
-    </div>
     <div class="preview-row">
       <div class="preview-wrap">
         <img id="preview" class="preview-img" alt="Selected image preview" />
       </div>
       <div class="preview-wrap">
-        <img id="overlay" class="preview-img" alt="Overlay preview" />
+        <img id="result" class="preview-img" alt="Processed image preview" />
       </div>
     </div>
     <script>
       const fileInput = document.getElementById("fileInput");
       const runDetection = document.getElementById("runDetection");
-      const overlayPoints = document.getElementById("overlayPoints");
-      const overlayLines = document.getElementById("overlayLines");
-      const overlayCircles = document.getElementById("overlayCircles");
       const preview = document.getElementById("preview");
-      const overlay = document.getElementById("overlay");
+      const result = document.getElementById("result");
       const state = { previewUrl: null, file: null };
 
       function hideImage(img) {
@@ -55,7 +37,7 @@
 
       function clearPreviews() {
         hideImage(preview);
-        hideImage(overlay);
+        hideImage(result);
         if (state.previewUrl) {
           URL.revokeObjectURL(state.previewUrl);
           state.previewUrl = null;
@@ -78,7 +60,7 @@
         }
         state.previewUrl = URL.createObjectURL(file);
         showImage(preview, state.previewUrl);
-        hideImage(overlay);
+        hideImage(result);
       });
 
       async function runDetectionRequest() {
@@ -88,42 +70,29 @@
         runDetection.disabled = true;
         const formData = new FormData();
         formData.append("file", state.file);
-        const params = new URLSearchParams({
-          points: overlayPoints.checked,
-          lines: overlayLines.checked,
-          circles: overlayCircles.checked,
-        });
         try {
-          const response = await fetch(`/keypoints?${params.toString()}`, {
+          const response = await fetch("/keypoints", {
             method: "POST",
             body: formData,
           });
           if (!response.ok) {
-            hideImage(overlay);
+            hideImage(result);
             return;
           }
           const data = await response.json();
-          if (!data || !data.overlay) {
-            hideImage(overlay);
+          if (!data || !data.image) {
+            hideImage(result);
             return;
           }
-          showImage(overlay, `data:image/png;base64,${data.overlay}`);
+          showImage(result, `data:image/png;base64,${data.image}`);
         } catch (error) {
-          hideImage(overlay);
+          hideImage(result);
         } finally {
           runDetection.disabled = false;
         }
       }
 
       runDetection.addEventListener("click", runDetectionRequest);
-      [overlayPoints, overlayLines, overlayCircles].forEach((checkbox) => {
-        checkbox.addEventListener("change", () => {
-          if (!state.file) {
-            return;
-          }
-          runDetectionRequest();
-        });
-      });
     </script>
   </body>
 </html>

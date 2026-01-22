@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 
-from app.vision.vision_utils import ensure_bgr_u8
+from backend.vision.vision_utils import ensure_bgr_u8, line_border_points
 
 LineRT = Tuple[float, float]
 
@@ -20,6 +20,7 @@ UNIQUE_THETA_TOL = float(np.deg2rad(6.0))
 MASK_KERNEL = 3
 OPEN_ITERS = 1
 CLOSE_ITERS = 2
+SUPPORT_SAMPLES = 160
 
 
 def build_white_mask(img_bgr: np.ndarray) -> np.ndarray:
@@ -55,6 +56,28 @@ def _select_unique_lines(raw_lines: Optional[np.ndarray]) -> List[LineRT]:
     return selected
 
 
+def _line_support(edges: np.ndarray, rho: float, theta: float) -> float:
+    h, w = edges.shape[:2]
+    pts = line_border_points(rho, theta, w, h)
+    if len(pts) < 2:
+        return 0.0
+
+    (x0, y0), (x1, y1) = pts
+    length = max(abs(x1 - x0), abs(y1 - y0))
+    samples = max(SUPPORT_SAMPLES, int(length))
+
+    t = np.linspace(0.0, 1.0, samples, dtype=np.float32)
+    xs = np.rint(x0 + (x1 - x0) * t).astype(np.int32)
+    ys = np.rint(y0 + (y1 - y0) * t).astype(np.int32)
+
+    valid = (0 <= xs) & (xs < w) & (0 <= ys) & (ys < h)
+    if not np.any(valid):
+        return 0.0
+
+    hits = edges[ys[valid], xs[valid]] > 0
+    return float(hits.sum()) / float(valid.sum())
+
+
 def detect_lines_from_mask(mask_u8: np.ndarray) -> dict:
     if mask_u8.ndim == 3:
         mask_u8 = cv2.cvtColor(mask_u8, cv2.COLOR_BGR2GRAY)
@@ -66,4 +89,15 @@ def detect_lines_from_mask(mask_u8: np.ndarray) -> dict:
     raw_lines = cv2.HoughLines(edges, HOUGH_RHO, HOUGH_THETA, votes)
     lines = _select_unique_lines(raw_lines)
 
-    return {"lines": [{"rho": float(rho), "theta_rad": float(theta)} for rho, theta in lines]}
+    lines_out = []
+    for rho, theta in lines:
+        accuracy = _line_support(edges, rho, theta)
+        lines_out.append(
+            {
+                "rho": float(rho),
+                "theta_rad": float(theta),
+                "accuracy": float(accuracy),
+            }
+        )
+
+    return {"lines": lines_out}
