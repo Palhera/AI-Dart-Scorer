@@ -18,6 +18,15 @@ api.mount("/frontend", StaticFiles(directory=str(BASE_DIR / "frontend")), name="
 def index():
     return FileResponse(BASE_DIR / "frontend" / "index.html", media_type="text/html")
 
+@api.get("/game")
+def game():
+    return FileResponse(BASE_DIR / "frontend" / "game-page.html", media_type="text/html")
+
+@api.get("/calibration")
+def calibration():
+    return FileResponse(BASE_DIR / "frontend" / "calibration-page.html", media_type="text/html")
+
+""" TEMPORARY UPLOAD TESTING ENDPOINT - REMOVE LATER """
 @api.post("/keypoints")
 async def keypoints(
     file: UploadFile = File(...),

@@ -4,95 +4,220 @@
     <meta charset="utf-8" />
     <title>AI Dart Scorer</title>
     <link rel="stylesheet" href="/frontend/style.css" />
+    <script src="/frontend/app.js" defer></script>
   </head>
-  <body>
-    <h1>AI Dart Scorer</h1>
+  <body class="screen-layout">
+    <header>
+      <h1>AI Dart Scorer</h1>
+    </header>
 
-    <input type="file" id="fileInput" accept="image/*" />
-    <button id="runDetection" type="button" disabled>Run detection</button>
-    <div class="preview-row">
-      <div class="preview-wrap">
-        <img id="preview" class="preview-img" alt="Selected image preview" />
-      </div>
-      <div class="preview-wrap">
-        <img id="result" class="preview-img" alt="Processed image preview" />
-      </div>
-    </div>
-    <script>
-      const fileInput = document.getElementById("fileInput");
-      const runDetection = document.getElementById("runDetection");
-      const preview = document.getElementById("preview");
-      const result = document.getElementById("result");
-      const state = { previewUrl: null, file: null };
+    <main class="homepage">
+      <section class="modes" role="radiogroup" aria-label="Select Game Mode">
+        <h2>Select Game Mode</h2>
+        <div class="game-mode-selection">
+          <div class="mode-item">
+            <div class="mode-card is-selected">
+              <button
+                class="mode-trigger"
+                type="button"
+                role="radio"
+                aria-checked="true"
+                aria-expanded="true"
+                data-mode="501"
+              >
+                <div class="mode-main">
+                  <div class="mode-icon" aria-hidden="true">
+                    <object data="/frontend/assets/dartboard_icon.svg" type="image/svg+xml"></object>
+                  </div>
+                  <div class="mode-text">
+                    <div class="mode-title">501 Darts</div>
+                    <div class="mode-sub">Standard tournament rules</div>
+                  </div>
+                  <div class="mode-chev" aria-hidden="true">›</div>
+                </div>
+              </button>
+              <div class="mode-options" aria-hidden="false">
+                <div class="mode-option">
+                  <span class="mode-option-label">Check-Out</span>
+                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-Out">
+                    <label class="mode-choice">
+                      <input type="radio" name="checkout-501" value="straight" checked />
+                      <span>Straight Out</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkout-501" value="double" />
+                      <span>Double Out</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkout-501" value="master" />
+                      <span>Master Out</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="mode-option">
+                  <span class="mode-option-label">Check-In</span>
+                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-In">
+                    <label class="mode-choice">
+                      <input type="radio" name="checkin-501" value="straight" checked />
+                      <span>Straight In</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkin-501" value="double" />
+                      <span>Double In</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkin-501" value="master" />
+                      <span>Master In</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-      function hideImage(img) {
-        img.style.display = "none";
-        img.removeAttribute("src");
-      }
+          <div class="mode-item">
+            <div class="mode-card">
+              <button
+                class="mode-trigger"
+                type="button"
+                role="radio"
+                aria-checked="false"
+                aria-expanded="false"
+                data-mode="301"
+              >
+                <div class="mode-main">
+                  <div class="mode-icon" aria-hidden="true">
+                    <object data="/frontend/assets/dart_icon.svg" type="image/svg+xml"></object>
+                  </div>
+                  <div class="mode-text">
+                    <div class="mode-title">301 Darts</div>
+                    <div class="mode-sub">Fast-paced sprint game</div>
+                  </div>
+                  <div class="mode-chev" aria-hidden="true">›</div>
+                </div>
+              </button>
+              <div class="mode-options" aria-hidden="true">
+                <div class="mode-option">
+                  <span class="mode-option-label">Check-Out</span>
+                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-Out">
+                    <label class="mode-choice">
+                      <input type="radio" name="checkout-301" value="straight" checked />
+                      <span>Straight Out</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkout-301" value="double" />
+                      <span>Double Out</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkout-301" value="master" />
+                      <span>Master Out</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="mode-option">
+                  <span class="mode-option-label">Check-In</span>
+                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-In">
+                    <label class="mode-choice">
+                      <input type="radio" name="checkin-301" value="straight" checked />
+                      <span>Straight In</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkin-301" value="double" />
+                      <span>Double In</span>
+                    </label>
+                    <label class="mode-choice">
+                      <input type="radio" name="checkin-301" value="master" />
+                      <span>Master In</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-      function showImage(img, src) {
-        img.src = src;
-        img.style.display = "block";
-      }
+          <div class="mode-item">
+            <div class="mode-card is-disabled">
+              <button
+                class="mode-trigger"
+                type="button"
+                role="radio"
+                aria-checked="false"
+                aria-expanded="false"
+                data-mode="cricket"
+                disabled
+              >
+                <div class="mode-main">
+                  <div class="mode-icon" aria-hidden="true">
+                    <object data="/frontend/assets/crossed-darts_icon.svg" type="image/svg+xml"></object>
+                  </div>
+                  <div class="mode-text">
+                    <div class="mode-title">Cricket</div>
+                    <div class="mode-sub">Coming soon ...</div>
+                    <!-- <div class="mode-sub">Tactical numbers control</div> -->
+                  </div>
+                  <div class="mode-chev" aria-hidden="true">›</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <section class="number-of-players-selection"  role="radiogroup" aria-label="Number of Players">
+        <h2>Players</h2>
+        <div class="number-of-players-options">
+          <span class="players-frame" aria-hidden="true"></span>
+          <button
+            class="number-of-players-card is-selected"
+            type="button"
+            role="radio"
+            aria-checked="true"
+            data-players="1"
+          >1</button>
+          <button
+            class="number-of-players-card"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            data-players="2"
+          >2</button>
+          <button
+            class="number-of-players-card"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            data-players="3"
+          >3</button>
+          <button
+            class="number-of-players-card"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            data-players="4"
+          >4</button>
+          <button
+            class="number-of-players-card"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            data-players="5"
+          >5</button>
+          <button
+            class="number-of-players-card"
+            type="button"
+            role="radio"
+            aria-checked="false"
+            data-players="6"
+          >6</button>
+        </div>
 
-      function clearPreviews() {
-        hideImage(preview);
-        hideImage(result);
-        if (state.previewUrl) {
-          URL.revokeObjectURL(state.previewUrl);
-          state.previewUrl = null;
-        }
-      }
-
-      fileInput.addEventListener("change", () => {
-        const file = fileInput.files && fileInput.files[0];
-        if (!file) {
-          state.file = null;
-          runDetection.disabled = true;
-          clearPreviews();
-          return;
-        }
-
-        state.file = file;
-        runDetection.disabled = false;
-        if (state.previewUrl) {
-          URL.revokeObjectURL(state.previewUrl);
-        }
-        state.previewUrl = URL.createObjectURL(file);
-        showImage(preview, state.previewUrl);
-        hideImage(result);
-      });
-
-      async function runDetectionRequest() {
-        if (!state.file || runDetection.disabled) {
-          return;
-        }
-        runDetection.disabled = true;
-        const formData = new FormData();
-        formData.append("file", state.file);
-        try {
-          const response = await fetch("/keypoints", {
-            method: "POST",
-            body: formData,
-          });
-          if (!response.ok) {
-            hideImage(result);
-            return;
-          }
-          const data = await response.json();
-          if (!data || !data.image) {
-            hideImage(result);
-            return;
-          }
-          showImage(result, `data:image/png;base64,${data.image}`);
-        } catch (error) {
-          hideImage(result);
-        } finally {
-          runDetection.disabled = false;
-        }
-      }
-
-      runDetection.addEventListener("click", runDetectionRequest);
-    </script>
+      </section>
+    </main>
+    <footer>
+      <a href="/game" class="start-game">Start Game</a>
+      <a href="/calibration" class="settings">
+        <object data="/frontend/assets/settings_icon.svg" type="image/svg+xml"></object>
+      </a>
+    </footer>
   </body>
 </html>
