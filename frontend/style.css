@@ -95,6 +95,7 @@ header h1 {
   line-height: 1.15;
   letter-spacing: -0.01em;
   color: rgba(234, 246, 239, .96);
+  user-select: none;
 }
 
 header h1 span {
@@ -229,6 +230,7 @@ header::after {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 18px;
+  user-select: none;
 }
 
 .players-frame {
@@ -398,6 +400,7 @@ header::after {
   opacity: 0;
   transform: translateY(-6px);
   transition: max-height .15s linear, opacity .14s ease, transform .15s ease, border-color .15s ease;
+  user-select: none;
 }
 
 .mode-options[aria-hidden="false"] {
