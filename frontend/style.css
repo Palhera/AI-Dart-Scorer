@@ -494,12 +494,6 @@ header::after {
   gap: 8px;
 }
 
-.mode-option-choices.is-stack {
-  flex-direction: column;
-  align-items: stretch;
-  width: 100%;
-}
-
 .mode-choice {
   position: relative;
   display: inline-flex;
@@ -536,28 +530,6 @@ header::after {
 .mode-choice input:focus-visible + span {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.mode-path-input {
-  width: min(100%, 360px);
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--text);
-  font-size: var(--font-size-xs);
-  font-family: inherit;
-}
-
-.mode-path-input::placeholder {
-  color: var(--text-muted);
-  opacity: 0.72;
-}
-
-.mode-path-input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-color: var(--selected-border);
 }
 
 .mode-option-hint {
@@ -806,6 +778,36 @@ footer a:focus-visible {
 
 .settings-sub {
   margin-top: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.settings-button {
+  min-width: 140px;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.settings-button:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.settings-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.settings-value {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }

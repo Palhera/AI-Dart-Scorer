@@ -1,4 +1,54 @@
 const DATA_COLLECTION_KEY = "dataCollectionEnabled";
+const DATA_COLLECTION_FOLDER_NAME = "dataCollectionFolderName";
+const DATA_COLLECTION_DB = "dartDataCollection";
+const DATA_COLLECTION_STORE = "settings";
+
+function openDataCollectionDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATA_COLLECTION_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DATA_COLLECTION_STORE)) {
+        db.createObjectStore(DATA_COLLECTION_STORE);
+      }
+    };
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+async function saveFolderHandle(handle) {
+  const db = await openDataCollectionDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DATA_COLLECTION_STORE, "readwrite");
+    tx.objectStore(DATA_COLLECTION_STORE).put(handle, "folderHandle");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadFolderHandle() {
+  if (!("indexedDB" in window)) return null;
+  const db = await openDataCollectionDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DATA_COLLECTION_STORE, "readonly");
+    const request = tx.objectStore(DATA_COLLECTION_STORE).get("folderHandle");
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function ensureFolderPermission(handle) {
+  if (!handle) return null;
+  try {
+    const permission = await handle.queryPermission({ mode: "readwrite" });
+    if (permission === "granted") return handle;
+    const requested = await handle.requestPermission({ mode: "readwrite" });
+    return requested === "granted" ? handle : null;
+  } catch {
+    return null;
+  }
+}
 
 /* ----- Game Mode Selection ----- */
 (() => {
@@ -179,7 +229,6 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
         modeLabel: null,
         checkOut: null,
         checkIn: null,
-        dataPath: null,
       };
     }
 
@@ -188,11 +237,9 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
       'input[name^="checkout-"]:checked'
     );
     const checkInInput = card?.querySelector('input[name^="checkin-"]:checked');
-    const dataPathInput = card?.querySelector('input[name="data-save-path"]');
     const modeTitle = trigger
       .querySelector(".mode-title")
       ?.textContent?.trim();
-    const dataPathValue = dataPathInput?.value?.trim();
 
     return {
       mode: trigger.dataset.mode || null,
@@ -200,7 +247,6 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
         trigger.dataset.modeLabel || modeTitle || trigger.dataset.mode || null,
       checkOut: checkOutInput ? checkOutInput.value : null,
       checkIn: checkInInput ? checkInInput.value : null,
-      dataPath: dataPathValue ? dataPathValue : null,
     };
   }
 
@@ -219,7 +265,6 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
       modeLabel: modeData.modeLabel,
       checkOut: modeData.checkOut,
       checkIn: modeData.checkIn,
-      dataPath: modeData.dataPath,
       players: getSelectedPlayers(),
       savedAt: Date.now(),
     };
@@ -306,24 +351,11 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
   const lastIdEl = page.querySelector("[data-last-id]");
   const captureButton = page.querySelector("[data-capture]");
 
-  let dataPath = null;
-  try {
-    const raw = localStorage.getItem("dartGameConfig");
-    const config = raw ? JSON.parse(raw) : null;
-    dataPath = config?.dataPath || null;
-  } catch {
-    dataPath = null;
-  }
+  let folderHandle = null;
 
   if (dataPathEl) {
-    dataPathEl.textContent = dataPath || "Not set";
-  }
-
-  if (!dataPath) {
-    if (statusEl) {
-      statusEl.textContent = "Select a save folder before starting this mode.";
-    }
-    if (captureButton) captureButton.disabled = true;
+    dataPathEl.textContent =
+      localStorage.getItem(DATA_COLLECTION_FOLDER_NAME) || "Not set";
   }
 
   function setStatus(text) {
@@ -376,17 +408,56 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
     });
   }
 
+  async function ensureFolderHandle() {
+    if (folderHandle) return folderHandle;
+    folderHandle = await loadFolderHandle();
+    return folderHandle;
+  }
+
+  function isValidFilename(name) {
+    return /^\d+_cam\d+\.png$/i.test(name);
+  }
+
+  function parseIdFromName(name) {
+    const match = /^(\d+)_cam\d+\.png$/i.exec(name);
+    if (!match) return null;
+    const value = Number(match[1]);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  async function getNextCaptureId(handle) {
+    let maxId = 0;
+    for await (const entry of handle.values()) {
+      if (!entry || entry.kind !== "file") continue;
+      if (!isValidFilename(entry.name)) continue;
+      const value = parseIdFromName(entry.name);
+      if (value && value > maxId) maxId = value;
+    }
+    return maxId + 1;
+  }
+
+  async function writePng(handle, filename, dataUrl) {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    const fileHandle = await handle.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  }
+
   async function captureSet() {
-    if (!dataPath) return;
+    const handle = await ensureFolderHandle();
+    const permittedHandle = await ensureFolderPermission(handle);
+    if (!permittedHandle) {
+      setStatus("Select a save folder in Settings.");
+      if (captureButton) captureButton.disabled = true;
+      return;
+    }
     if (captureButton) captureButton.disabled = true;
     setStatus("Capturing...");
 
     try {
-      const response = await fetch("/data-collection/capture", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ save_path: dataPath }),
-      });
+      const response = await fetch("/data-collection/snap");
 
       if (!response.ok) {
         setStatus("Capture failed.");
@@ -394,14 +465,27 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
       }
 
       const data = await response.json();
-      if (data?.id && lastIdEl) {
-        lastIdEl.textContent = data.id;
+      const cameras = Array.isArray(data?.cameras) ? data.cameras : [];
+      const images = data?.images && typeof data.images === "object" ? data.images : {};
+      if (cameras.length === 0) {
+        setStatus("No cameras available.");
+        return;
       }
+
+      const nextId = await getNextCaptureId(permittedHandle);
+      const idStr = `${nextId}`.padStart(5, "0");
+      for (const camId of cameras) {
+        const payload = images[camId] || images[String(camId)];
+        if (!payload) continue;
+        await writePng(permittedHandle, `${idStr}_cam${camId}.png`, payload);
+      }
+
+      if (lastIdEl) lastIdEl.textContent = idStr;
       setStatus("Saved.");
     } catch {
       setStatus("Capture failed.");
     } finally {
-      if (captureButton) captureButton.disabled = !dataPath;
+      if (captureButton) captureButton.disabled = false;
     }
   }
 
@@ -424,6 +508,14 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
   });
 
   loadCameras().then(renderCameras);
+
+  (async () => {
+    folderHandle = await loadFolderHandle();
+    if (!folderHandle && captureButton) {
+      captureButton.disabled = true;
+      setStatus("Select a save folder in Settings.");
+    }
+  })();
 })();
 
 /* ----- Settings: Data Collection Toggle ----- */
@@ -439,6 +531,37 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
       DATA_COLLECTION_KEY,
       toggle.checked ? "true" : "false"
     );
+  });
+})();
+
+/* ----- Settings: Data Collection Folder ----- */
+(() => {
+  const button = document.getElementById("selectDataFolder");
+  const label = document.querySelector("[data-folder-name]");
+  if (!button) return;
+
+  async function updateLabel() {
+    if (label) {
+      label.textContent =
+        localStorage.getItem(DATA_COLLECTION_FOLDER_NAME) || "Not set";
+    }
+  }
+
+  updateLabel();
+
+  button.addEventListener("click", async () => {
+    if (!("showDirectoryPicker" in window)) {
+      alert("Folder picker is not supported in this browser.");
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker();
+      await saveFolderHandle(handle);
+      localStorage.setItem(DATA_COLLECTION_FOLDER_NAME, handle.name || "Selected");
+      updateLabel();
+    } catch {
+      // user cancelled
+    }
   });
 })();
 

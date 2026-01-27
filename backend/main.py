@@ -1,12 +1,11 @@
 import base64
 import base64
-import re
 import threading
 import time
 
 import cv2
 import numpy as np
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -94,69 +93,24 @@ def camera_stream(cam_id: int):
         headers={"Cache-Control": "no-cache"},
     )
 
-def _find_next_capture_id(folder: Path) -> int:
-    if not folder.exists():
-        return 1
-    pattern = re.compile(r"^(\d+)_cam\d+\.png$", re.IGNORECASE)
-    max_id = 0
-    for entry in folder.iterdir():
-        if not entry.is_file():
-            continue
-        match = pattern.match(entry.name)
-        if not match:
-            continue
-        try:
-            value = int(match.group(1))
-        except ValueError:
-            continue
-        max_id = max(max_id, value)
-    return max_id + 1
-
-@api.post("/data-collection/capture")
-def data_collection_capture(payload: dict = Body(...)):
-    save_path = payload.get("save_path") if isinstance(payload, dict) else None
-    if not save_path or not isinstance(save_path, str):
-        raise HTTPException(status_code=400, detail="Missing save_path")
-
-    target_dir = Path(save_path).expanduser()
-    try:
-        target_dir.mkdir(parents=True, exist_ok=True)
-    except Exception as exc:  # pragma: no cover - OS-specific failure
-        raise HTTPException(status_code=400, detail="Unable to access save_path") from exc
-
+@api.get("/data-collection/snap")
+def data_collection_snap():
     with capture_lock:
         available = camera_manager.get_available()
         if not available:
             raise HTTPException(status_code=400, detail="No cameras available")
 
-        frames = {}
+        images = {}
         for cam_id in available:
             frame = camera_manager.get_frame(cam_id)
             if frame is None:
                 raise HTTPException(status_code=500, detail=f"Camera {cam_id} not ready")
-            frames[cam_id] = frame
+            ok, buffer = cv2.imencode(".png", frame)
+            if not ok:
+                raise HTTPException(status_code=500, detail=f"Failed to encode camera {cam_id}")
+            images[str(cam_id)] = "data:image/png;base64," + base64.b64encode(buffer.tobytes()).decode("ascii")
 
-        capture_id = _find_next_capture_id(target_dir)
-        id_str = f"{capture_id:05d}"
-        saved_files = []
-
-        try:
-            for cam_id, frame in frames.items():
-                filename = f"{id_str}_cam{cam_id}.png"
-                file_path = target_dir / filename
-                ok = cv2.imwrite(str(file_path), frame)
-                if not ok:
-                    raise RuntimeError(f"Failed to save camera {cam_id}")
-                saved_files.append(filename)
-        except Exception as exc:
-            for filename in saved_files:
-                try:
-                    (target_dir / filename).unlink()
-                except Exception:
-                    pass
-            raise HTTPException(status_code=500, detail="Failed to save capture") from exc
-
-        return {"id": id_str, "cameras": available, "saved": saved_files}
+        return {"cameras": available, "images": images}
 
 """ TEMPORARY UPLOAD TESTING ENDPOINT - REMOVE LATER """
 @api.post("/keypoints")
