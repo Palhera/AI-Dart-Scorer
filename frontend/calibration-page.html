@@ -14,6 +14,18 @@
 <input type="file" id="fileInput" accept="image/*" />
 <button id="runDetection" type="button" disabled>Run detection</button>
 
+<section class="warp-output">
+  <div class="warp-title">Total warp matrix</div>
+  <textarea
+    id="warpMatrix"
+    class="warp-matrix"
+    rows="5"
+    readonly
+    spellcheck="false"
+    aria-label="Total warp matrix"
+  >Run detection to compute the matrix.</textarea>
+</section>
+
 <div class="preview-row">
   <div class="preview-wrap">
     <img id="preview" class="preview-img" alt="Selected image preview" />

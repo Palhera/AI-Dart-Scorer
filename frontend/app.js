@@ -241,6 +241,7 @@
   const runDetection = document.getElementById("runDetection");
   const preview = document.getElementById("preview");
   const result = document.getElementById("result");
+  const warpMatrix = document.getElementById("warpMatrix");
 
   // Not on the calibration page -> do nothing
   if (!fileInput || !runDetection) return;
@@ -265,6 +266,9 @@
     if (state.previewUrl) {
       URL.revokeObjectURL(state.previewUrl);
       state.previewUrl = null;
+    }
+    if (warpMatrix) {
+      warpMatrix.value = "Run detection to compute the matrix.";
     }
   }
 
@@ -307,18 +311,37 @@
 
       if (!response.ok) {
         hideImage(result);
+        if (warpMatrix) warpMatrix.value = "Detection failed.";
         return;
       }
 
       const data = await response.json();
       if (!data?.image) {
         hideImage(result);
+        if (warpMatrix) warpMatrix.value = "No matrix returned.";
         return;
       }
 
       showImage(result, `data:image/png;base64,${data.image}`);
+      if (warpMatrix) {
+        const matrix = data.total_warp_matrix;
+        if (Array.isArray(matrix) && matrix.length === 3) {
+          const lines = matrix.map((row) =>
+            row
+              .map((value) => {
+                const num = Number(value);
+                return Number.isFinite(num) ? num.toFixed(6) : "0.000000";
+              })
+              .join(" ")
+          );
+          warpMatrix.value = lines.join("\n");
+        } else {
+          warpMatrix.value = "No matrix returned.";
+        }
+      }
     } catch {
       hideImage(result);
+      if (warpMatrix) warpMatrix.value = "Detection failed.";
     } finally {
       runDetection.disabled = false;
     }

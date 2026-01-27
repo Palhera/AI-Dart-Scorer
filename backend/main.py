@@ -62,8 +62,13 @@ async def keypoints(
     if result is None:
         raise HTTPException(status_code=500, detail="No result generated")
 
-    ok_result, result_png = cv2.imencode(".png", result)
+    result_img, total_matrix = result
+    ok_result, result_png = cv2.imencode(".png", result_img)
     if not ok_result:
         raise HTTPException(status_code=500, detail="Failed to encode result")
 
-    return {"image": base64.b64encode(result_png.tobytes()).decode("ascii")}
+    payload = {"image": base64.b64encode(result_png.tobytes()).decode("ascii")}
+    payload["total_warp_matrix"] = (
+        total_matrix.tolist() if isinstance(total_matrix, np.ndarray) else None
+    )
+    return payload

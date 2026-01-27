@@ -4,7 +4,7 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 
 from backend.vision.ellipse_detection import build_red_green_mask, detect_outer_ellipse
-from backend.vision.homography import warp_to_reference
+from backend.vision.homography import warp_to_reference_with_matrix
 from backend.vision.line_detection import build_white_mask, detect_lines_from_mask
 from backend.vision.reference import draw_reference_overlay
 
@@ -82,7 +82,7 @@ def _collect_line_intersections(lines: Sequence[dict], ellipse: Ellipse) -> List
     return lines_with_points
 
 
-def compute_keypoints(img_bgr: np.ndarray) -> Optional[np.ndarray]:
+def compute_keypoints(img_bgr: np.ndarray) -> Optional[Tuple[np.ndarray, Optional[np.ndarray]]]:
     if img_bgr is None:
         return None
 
@@ -92,17 +92,19 @@ def compute_keypoints(img_bgr: np.ndarray) -> Optional[np.ndarray]:
     rg_mask = build_red_green_mask(img_bgr)
     ellipse = detect_outer_ellipse(rg_mask)
     if ellipse is None or not lines:
-        return img_bgr.copy()
+        return img_bgr.copy(), None
 
     lines_with_points = _collect_line_intersections(lines, ellipse)
     if not lines_with_points:
-        return img_bgr.copy()
+        return img_bgr.copy(), None
 
     (cx, cy), _axes, _angle = ellipse
     center = np.array([cx, cy], dtype=np.float64)
 
-    warped = warp_to_reference(img_bgr, lines_with_points, center)
-    if warped is None:
-        return img_bgr.copy()
+    result = warp_to_reference_with_matrix(img_bgr, lines_with_points, center)
+    if result is None:
+        return img_bgr.copy(), None
 
-    return draw_reference_overlay(warped)
+    warped, total_matrix = result
+
+    return draw_reference_overlay(warped), total_matrix

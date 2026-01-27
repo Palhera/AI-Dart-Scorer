@@ -1,5 +1,6 @@
 import math
-from typing import List, Optional, Sequence, Tuple
+import os
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -13,6 +14,105 @@ from backend.vision.reference import (
 )
 
 PointF = Tuple[float, float]
+EccCache = Tuple[np.ndarray, np.ndarray]
+
+ECC_CANNY_LOW = 40
+ECC_CANNY_HIGH = 140
+ECC_MASK_MARGIN_MM = 2.0
+ECC_MAX_ITERS = 80
+ECC_EPS = 1e-6
+ECC_GAUSS_SIZE = 5
+
+_ECC_CACHE: Dict[int, EccCache] = {}
+
+
+def _build_ecc_mask(output_size: int) -> np.ndarray:
+    mask = np.zeros((output_size, output_size), dtype=np.uint8)
+    center = (int(round((output_size - 1) * 0.5)), int(round((output_size - 1) * 0.5)))
+    radius_mm = REFERENCE_LINE_OUTER_MM + ECC_MASK_MARGIN_MM
+    radius_px = int(round(radius_mm * output_size / BOARD_DIAMETER_MM))
+    if radius_px > 0:
+        cv2.circle(mask, center, radius_px, 255, thickness=-1)
+    return mask
+
+
+def _prepare_ecc_image(img_bgr: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, ECC_CANNY_LOW, ECC_CANNY_HIGH)
+    edges = cv2.GaussianBlur(edges, (3, 3), 0)
+    return edges.astype(np.float32) / 255.0
+
+
+def _get_reference_ecc(output_size: int) -> Optional[EccCache]:
+    cached = _ECC_CACHE.get(output_size)
+    if cached is not None:
+        return cached
+
+    ref_path = os.path.join(os.path.dirname(__file__), "reference.png")
+    ref = cv2.imread(ref_path, cv2.IMREAD_COLOR)
+    if ref is None:
+        return None
+
+    if ref.shape[0] != output_size or ref.shape[1] != output_size:
+        ref = cv2.resize(ref, (output_size, output_size), interpolation=cv2.INTER_AREA)
+
+    ref_edges = _prepare_ecc_image(ref)
+    mask = _build_ecc_mask(output_size)
+    _ECC_CACHE[output_size] = (ref_edges, mask)
+    return _ECC_CACHE[output_size]
+
+
+def _refine_with_ecc(warped_bgr: np.ndarray, output_size: int) -> Tuple[np.ndarray, np.ndarray]:
+    ecc_ref = _get_reference_ecc(output_size)
+    if ecc_ref is None:
+        return warped_bgr, np.eye(3, dtype=np.float64)
+
+    ref_edges, mask = ecc_ref
+    moving_edges = _prepare_ecc_image(warped_bgr)
+
+    warp_matrix = np.eye(3, 3, dtype=np.float32)
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, ECC_MAX_ITERS, ECC_EPS)
+
+    try:
+        _cc, warp_matrix = cv2.findTransformECC(
+            ref_edges,
+            moving_edges,
+            warp_matrix,
+            cv2.MOTION_HOMOGRAPHY,
+            criteria,
+            inputMask=mask,
+            gaussFiltSize=ECC_GAUSS_SIZE,
+        )
+    except cv2.error:
+        return warped_bgr, np.eye(3, dtype=np.float64)
+
+    refined = cv2.warpPerspective(
+        warped_bgr,
+        warp_matrix,
+        (output_size, output_size),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+    )
+    try:
+        ecc_forward = np.linalg.inv(warp_matrix.astype(np.float64))
+    except np.linalg.LinAlgError:
+        ecc_forward = np.eye(3, dtype=np.float64)
+    return refined, ecc_forward
+
+
+def warp_to_reference_with_matrix(
+    img_bgr: np.ndarray,
+    lines_with_points: Sequence[dict],
+    center: np.ndarray,
+    output_size: int = REFERENCE_OUTPUT_SIZE,
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    homography = compute_homography(lines_with_points, center, output_size=output_size)
+    if homography is None:
+        return None
+
+    warped = cv2.warpPerspective(img_bgr, homography, (output_size, output_size))
+    refined, ecc_forward = _refine_with_ecc(warped, output_size)
+    total = ecc_forward @ homography.astype(np.float64)
+    return refined, total
 
 
 def _angle_diff(a: float, b: float) -> float:
@@ -119,8 +219,12 @@ def warp_to_reference(
     center: np.ndarray,
     output_size: int = REFERENCE_OUTPUT_SIZE,
 ) -> Optional[np.ndarray]:
-    homography = compute_homography(lines_with_points, center, output_size=output_size)
-    if homography is None:
+    result = warp_to_reference_with_matrix(
+        img_bgr,
+        lines_with_points,
+        center,
+        output_size=output_size,
+    )
+    if result is None:
         return None
-
-    return cv2.warpPerspective(img_bgr, homography, (output_size, output_size))
+    return result[0]
