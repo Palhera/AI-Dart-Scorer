@@ -10,6 +10,23 @@
   <h2>Settings</h2>
 </header>
 
+<section class="settings-panel" aria-label="Game modes">
+  <div class="settings-row">
+    <div>
+      <div class="settings-label" id="dataCollectionLabel">Data Collection Mode</div>
+      <div class="settings-sub">Show in game mode selection</div>
+    </div>
+    <label class="switch">
+      <input
+        type="checkbox"
+        id="toggleDataCollection"
+        aria-labelledby="dataCollectionLabel"
+      />
+      <span class="switch-slider" aria-hidden="true"></span>
+    </label>
+  </div>
+</section>
+
 <input type="file" id="fileInput" accept="image/*" />
 <button id="runDetection" type="button" disabled>Run detection</button>
 

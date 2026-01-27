@@ -138,6 +138,53 @@
           </div>
 
           <div class="mode-item">
+            <div class="mode-card">
+              <button
+                class="mode-trigger"
+                type="button"
+                role="radio"
+                aria-checked="false"
+                aria-expanded="false"
+                data-mode="data-collection"
+                data-mode-label="Data Collection"
+              >
+                <div class="mode-main">
+                  <div class="mode-icon" aria-hidden="true">
+                    <object data="/frontend/assets/settings_icon.svg" type="image/svg+xml"></object>
+                  </div>
+                  <div class="mode-text">
+                    <div class="mode-title">Data Collection</div>
+                    <div class="mode-sub">Save training data for analysis</div>
+                  </div>
+                  <div class="mode-chev" aria-hidden="true">&rsaquo;</div>
+                </div>
+              </button>
+              <div class="mode-options" aria-hidden="true">
+                <div class="mode-option">
+                  <label class="mode-option-label" for="data-save-path">
+                    Where to save the data
+                  </label>
+                  <div class="mode-option-choices is-stack">
+                    <input
+                      class="mode-path-input"
+                      id="data-save-path"
+                      name="data-save-path"
+                      type="text"
+                      placeholder="\\server\share\dart-data"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="mode-option-hint">
+                      Example: \\server\share\dart-data
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mode-item">
             <div class="mode-card is-disabled">
               <button
                 class="mode-trigger"
