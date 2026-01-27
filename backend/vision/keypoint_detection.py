@@ -6,7 +6,7 @@ import numpy as np
 from backend.vision.ellipse_detection import build_red_green_mask, detect_outer_ellipse
 from backend.vision.homography import warp_to_reference_with_matrix
 from backend.vision.line_detection import build_white_mask, detect_lines_from_mask
-from backend.vision.reference import draw_reference_overlay
+from backend.vision.reference import REFERENCE_OUTPUT_SIZE, draw_reference_overlay
 
 PointF = Tuple[float, float]
 Ellipse = Tuple[Tuple[float, float], Tuple[float, float], float]
@@ -101,7 +101,17 @@ def compute_keypoints(img_bgr: np.ndarray) -> Optional[Tuple[np.ndarray, Optiona
     (cx, cy), _axes, _angle = ellipse
     center = np.array([cx, cy], dtype=np.float64)
 
-    result = warp_to_reference_with_matrix(img_bgr, lines_with_points, center)
+    output_size = min(
+        int(img_bgr.shape[0]),
+        int(img_bgr.shape[1]),
+        REFERENCE_OUTPUT_SIZE,
+    )
+    result = warp_to_reference_with_matrix(
+        img_bgr,
+        lines_with_points,
+        center,
+        output_size=output_size,
+    )
     if result is None:
         return img_bgr.copy(), None
 

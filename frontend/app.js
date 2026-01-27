@@ -42,7 +42,6 @@
     updateOptionHeights();
 
     const mode = trigger.dataset.mode;
-    console.log("Selected mode:", mode);
   }
 
   const initial =
@@ -100,7 +99,6 @@
     updateFrame(button);
 
     const players = button.dataset.players;
-    console.log("Selected players:", players);
   }
 
   const initial =

@@ -1,15 +1,14 @@
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="/frontend/style.css" />
 <link rel="icon" href="/frontend/assets/favicon.svg" />
 <script src="/frontend/app.js" defer></script>
 
-<div class="reference-check">
-  <div class="reference-title">Reference overlay</div>
-  <img
-    class="reference-img"
-    src="/reference-overlay.png"
-    alt="Reference board overlay"
-  />
-</div>
+<header class="secondary-header">
+  <a href="/" class="back-home-button">
+    <object data="/frontend/assets/chevron-left_icon.svg" type="image/svg+xml"></object>
+  </a>
+  <h2>Settings</h2>
+</header>
 
 <input type="file" id="fileInput" accept="image/*" />
 <button id="runDetection" type="button" disabled>Run detection</button>
@@ -34,5 +33,3 @@
     <img id="result" class="preview-img" alt="Processed image preview" />
   </div>
 </div>
-
-<a href="/">Back to Home</a>

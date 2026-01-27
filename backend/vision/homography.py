@@ -26,6 +26,16 @@ ECC_GAUSS_SIZE = 5
 _ECC_CACHE: Dict[int, EccCache] = {}
 
 
+def _select_warp_interpolation(img_bgr: np.ndarray, output_size: int) -> int:
+    h, w = img_bgr.shape[:2]
+    target = min(h, w)
+    if output_size < target:
+        return cv2.INTER_AREA
+    if output_size > target:
+        return cv2.INTER_LANCZOS4
+    return cv2.INTER_LINEAR
+
+
 def _build_ecc_mask(output_size: int) -> np.ndarray:
     mask = np.zeros((output_size, output_size), dtype=np.uint8)
     center = (int(round((output_size - 1) * 0.5)), int(round((output_size - 1) * 0.5)))
@@ -90,7 +100,8 @@ def _refine_with_ecc(warped_bgr: np.ndarray, output_size: int) -> Tuple[np.ndarr
         warped_bgr,
         warp_matrix,
         (output_size, output_size),
-        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        flags=_select_warp_interpolation(warped_bgr, output_size)
+        | cv2.WARP_INVERSE_MAP,
     )
     try:
         ecc_forward = np.linalg.inv(warp_matrix.astype(np.float64))
@@ -109,7 +120,12 @@ def warp_to_reference_with_matrix(
     if homography is None:
         return None
 
-    warped = cv2.warpPerspective(img_bgr, homography, (output_size, output_size))
+    warped = cv2.warpPerspective(
+        img_bgr,
+        homography,
+        (output_size, output_size),
+        flags=_select_warp_interpolation(img_bgr, output_size),
+    )
     refined, ecc_forward = _refine_with_ecc(warped, output_size)
     total = ecc_forward @ homography.astype(np.float64)
     return refined, total
