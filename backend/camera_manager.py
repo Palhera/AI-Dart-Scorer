@@ -4,6 +4,14 @@ import time
 
 import cv2
 
+try:
+    cv2.setLogLevel(cv2.LOG_LEVEL_ERROR)
+except Exception:
+    try:
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+    except Exception:
+        pass
+
 
 class CameraStream:
     def __init__(self, cam_id: int, index: int) -> None:
@@ -19,11 +27,21 @@ class CameraStream:
         if self.running:
             return True
 
-        backend = cv2.CAP_DSHOW if os.name == "nt" else 0
-        self.capture = cv2.VideoCapture(self.index, backend)
-        if not self.capture.isOpened():
-            self.capture.release()
-            self.capture = None
+        if os.name != "nt":
+            device_path = f"/dev/video{self.index}"
+            if not os.path.exists(device_path):
+                return False
+            backend_order = [cv2.CAP_V4L2]
+        else:
+            backend_order = [cv2.CAP_MSMF, cv2.CAP_DSHOW]
+
+        for backend in backend_order:
+            capture = cv2.VideoCapture(self.index, backend)
+            if capture.isOpened():
+                self.capture = capture
+                break
+            capture.release()
+        if self.capture is None:
             return False
 
         ok, frame = self.capture.read()
@@ -64,16 +82,24 @@ class CameraManager:
     def __init__(self, cam_ids=(1, 2, 3)) -> None:
         self.cam_ids = cam_ids
         self.cams = {}
+        self.failed = {}
+        self.fail_ttl = 60.0
         self.lock = threading.Lock()
 
     def _start_camera(self, cam_id: int) -> None:
         if cam_id in self.cams:
+            return
+        last_fail = self.failed.get(cam_id)
+        if last_fail and (time.time() - last_fail) < self.fail_ttl:
             return
 
         index = cam_id - 1
         stream = CameraStream(cam_id, index)
         if stream.start():
             self.cams[cam_id] = stream
+            self.failed.pop(cam_id, None)
+        else:
+            self.failed[cam_id] = time.time()
 
     def ensure_started(self) -> None:
         with self.lock:
