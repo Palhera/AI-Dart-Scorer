@@ -2,6 +2,7 @@ const DATA_COLLECTION_KEY = "dataCollectionEnabled";
 const DATA_COLLECTION_FOLDER_NAME = "dataCollectionFolderName";
 const DATA_COLLECTION_DB = "dartDataCollection";
 const DATA_COLLECTION_STORE = "settings";
+const SUPPORTS_FOLDER_PICKER = "showDirectoryPicker" in window;
 
 function openDataCollectionDb() {
   return new Promise((resolve, reject) => {
@@ -445,10 +446,19 @@ async function ensureFolderPermission(handle) {
     await writable.close();
   }
 
+  function downloadPng(filename, dataUrl) {
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   async function captureSet() {
     const handle = await ensureFolderHandle();
     const permittedHandle = await ensureFolderPermission(handle);
-    if (!permittedHandle) {
+    if (!permittedHandle && SUPPORTS_FOLDER_PICKER) {
       setStatus("Select a save folder in Settings.");
       if (captureButton) captureButton.disabled = true;
       return;
@@ -472,14 +482,24 @@ async function ensureFolderPermission(handle) {
         return;
       }
 
-      const nextId = await getNextCaptureId(permittedHandle);
+      const nextId = permittedHandle
+        ? await getNextCaptureId(permittedHandle)
+        : Number(localStorage.getItem("dataCollectionLastId") || "0") + 1;
       const idStr = `${nextId}`.padStart(5, "0");
       for (const camId of cameras) {
         const payload = images[camId] || images[String(camId)];
         if (!payload) continue;
-        await writePng(permittedHandle, `${idStr}_cam${camId}.png`, payload);
+        const filename = `${idStr}_cam${camId}.png`;
+        if (permittedHandle) {
+          await writePng(permittedHandle, filename, payload);
+        } else {
+          downloadPng(filename, payload);
+        }
       }
 
+      if (!permittedHandle) {
+        localStorage.setItem("dataCollectionLastId", String(nextId));
+      }
       if (lastIdEl) lastIdEl.textContent = idStr;
       setStatus("Saved.");
     } catch {
@@ -511,9 +531,11 @@ async function ensureFolderPermission(handle) {
 
   (async () => {
     folderHandle = await loadFolderHandle();
-    if (!folderHandle && captureButton) {
+    if (!folderHandle && captureButton && SUPPORTS_FOLDER_PICKER) {
       captureButton.disabled = true;
       setStatus("Select a save folder in Settings.");
+    } else if (!SUPPORTS_FOLDER_PICKER) {
+      setStatus("Folder picker unsupported. Captures will download to your PC.");
     }
   })();
 })();
@@ -550,8 +572,10 @@ async function ensureFolderPermission(handle) {
   updateLabel();
 
   button.addEventListener("click", async () => {
-    if (!("showDirectoryPicker" in window)) {
-      alert("Folder picker is not supported in this browser.");
+    if (!SUPPORTS_FOLDER_PICKER) {
+      alert(
+        "Folder picker is not supported in this browser. Captures will download to your default Downloads folder."
+      );
       return;
     }
     try {
