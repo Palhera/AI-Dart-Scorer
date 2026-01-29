@@ -4,254 +4,277 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI Dart Scorer</title>
-    <link rel="stylesheet" href="/frontend/style.css" />
-    <link rel="icon" href="/frontend/assets/favicon.svg" />
-    <script src="/frontend/app.js" defer></script>
+    <link rel="stylesheet" href="/assets/css/style.css" />
+    <link rel="icon" href="/assets/images/favicon.svg" />
+    <script src="/assets/js/app.js" defer></script>
   </head>
+
   <body>
-    <header>
+    <header class="hero panel">
       <h1>AI Dart Scorer</h1>
     </header>
 
-    <main class="homepage">
-      <section class="modes" role="radiogroup" aria-label="Select Game Mode">
+    <main hidden>
+      <section class="game-modes">
         <h2>Select Game Mode</h2>
-        <div class="game-mode-selection">
-          <div class="mode-item">
-            <div class="mode-card is-selected">
-              <button
-                class="mode-trigger"
-                type="button"
-                role="radio"
-                aria-checked="true"
-                aria-expanded="true"
-                data-mode="501"
-              >
-                <div class="mode-main">
-                  <div class="mode-icon" aria-hidden="true">
-                    <object data="/frontend/assets/dartboard_icon.svg" type="image/svg+xml"></object>
-                  </div>
-                  <div class="mode-text">
-                    <div class="mode-title">501 Darts</div>
-                    <div class="mode-sub">Standard tournament rules</div>
-                  </div>
-                  <div class="mode-chev" aria-hidden="true">&rsaquo;</div>
+
+        <div class="game-mode-options">
+          <div class="game-mode-option" role="button" tabindex="0">
+            <object
+              data="/assets/images/dartboard_icon.svg"
+              type="image/svg+xml"
+              class="game-mode-icon"
+            ></object>
+
+            <h3 class="game-mode-title">501 Darts</h3>
+            <p class="game-mode-sub">Standard tournament rules</p>
+            <p class="game-mode-chev" aria-hidden="true">&rsaquo;</p>
+
+            <div class="game-mode-config">
+              <div class="game-mode-config-line">
+                <span class="game-mode-config-label" id="checkout-501-label"
+                  >Check-Out</span
+                >
+                <div
+                  class="game-mode-config-choices"
+                  role="radiogroup"
+                  aria-labelledby="checkout-501-label"
+                >
+                  <label class="game-mode-config-choice">
+                    <input
+                      type="radio"
+                      name="checkout-501"
+                      value="straight"
+                      checked
+                    />
+                    <span>Straight Out</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkout-501" value="double" />
+                    <span>Double Out</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkout-501" value="master" />
+                    <span>Master Out</span>
+                  </label>
                 </div>
-              </button>
-              <div class="mode-options" aria-hidden="false">
-                <div class="mode-option">
-                  <span class="mode-option-label">Check-Out</span>
-                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-Out">
-                    <label class="mode-choice">
-                      <input type="radio" name="checkout-501" value="straight" checked />
-                      <span>Straight Out</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkout-501" value="double" />
-                      <span>Double Out</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkout-501" value="master" />
-                      <span>Master Out</span>
-                    </label>
-                  </div>
-                </div>
-                <div class="mode-option">
-                  <span class="mode-option-label">Check-In</span>
-                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-In">
-                    <label class="mode-choice">
-                      <input type="radio" name="checkin-501" value="straight" checked />
-                      <span>Straight In</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkin-501" value="double" />
-                      <span>Double In</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkin-501" value="master" />
-                      <span>Master In</span>
-                    </label>
-                  </div>
+              </div>
+
+              <div class="game-mode-config-line">
+                <span class="game-mode-config-label" id="checkin-501-label"
+                  >Check-In</span
+                >
+                <div
+                  class="game-mode-config-choices"
+                  role="radiogroup"
+                  aria-labelledby="checkin-501-label"
+                >
+                  <label class="game-mode-config-choice">
+                    <input
+                      type="radio"
+                      name="checkin-501"
+                      value="straight"
+                      checked
+                    />
+                    <span>Straight In</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkin-501" value="double" />
+                    <span>Double In</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkin-501" value="master" />
+                    <span>Master In</span>
+                  </label>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="mode-item">
-            <div class="mode-card">
-              <button
-                class="mode-trigger"
-                type="button"
-                role="radio"
-                aria-checked="false"
-                aria-expanded="false"
-                data-mode="301"
-              >
-                <div class="mode-main">
-                  <div class="mode-icon" aria-hidden="true">
-                    <object data="/frontend/assets/dart_icon.svg" type="image/svg+xml"></object>
-                  </div>
-                  <div class="mode-text">
-                    <div class="mode-title">301 Darts</div>
-                    <div class="mode-sub">Fast-paced sprint game</div>
-                  </div>
-                  <div class="mode-chev" aria-hidden="true">&rsaquo;</div>
+          <div class="game-mode-option" role="button" tabindex="0">
+            <object
+              data="/assets/images/dart_icon.svg"
+              type="image/svg+xml"
+              class="game-mode-icon"
+            ></object>
+
+            <h3 class="game-mode-title">301 Darts</h3>
+            <p class="game-mode-sub">Fast-paced sprint game</p>
+            <p class="game-mode-chev" aria-hidden="true">&rsaquo;</p>
+
+            <div class="game-mode-config">
+              <div class="game-mode-config-line">
+                <span class="game-mode-config-label" id="checkout-301-label"
+                  >Check-Out</span
+                >
+                <div
+                  class="game-mode-config-choices"
+                  role="radiogroup"
+                  aria-labelledby="checkout-301-label"
+                >
+                  <label class="game-mode-config-choice">
+                    <input
+                      type="radio"
+                      name="checkout-301"
+                      value="straight"
+                      checked
+                    />
+                    <span>Straight Out</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkout-301" value="double" />
+                    <span>Double Out</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkout-301" value="master" />
+                    <span>Master Out</span>
+                  </label>
                 </div>
-              </button>
-              <div class="mode-options" aria-hidden="true">
-                <div class="mode-option">
-                  <span class="mode-option-label">Check-Out</span>
-                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-Out">
-                    <label class="mode-choice">
-                      <input type="radio" name="checkout-301" value="straight" checked />
-                      <span>Straight Out</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkout-301" value="double" />
-                      <span>Double Out</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkout-301" value="master" />
-                      <span>Master Out</span>
-                    </label>
-                  </div>
-                </div>
-                <div class="mode-option">
-                  <span class="mode-option-label">Check-In</span>
-                  <div class="mode-option-choices" role="radiogroup" aria-label="Check-In">
-                    <label class="mode-choice">
-                      <input type="radio" name="checkin-301" value="straight" checked />
-                      <span>Straight In</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkin-301" value="double" />
-                      <span>Double In</span>
-                    </label>
-                    <label class="mode-choice">
-                      <input type="radio" name="checkin-301" value="master" />
-                      <span>Master In</span>
-                    </label>
-                  </div>
+              </div>
+
+              <div class="game-mode-config-line">
+                <span class="game-mode-config-label" id="checkin-301-label"
+                  >Check-In</span
+                >
+                <div
+                  class="game-mode-config-choices"
+                  role="radiogroup"
+                  aria-labelledby="checkin-301-label"
+                >
+                  <label class="game-mode-config-choice">
+                    <input
+                      type="radio"
+                      name="checkin-301"
+                      value="straight"
+                      checked
+                    />
+                    <span>Straight In</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkin-301" value="double" />
+                    <span>Double In</span>
+                  </label>
+                  <label class="game-mode-config-choice">
+                    <input type="radio" name="checkin-301" value="master" />
+                    <span>Master In</span>
+                  </label>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="mode-item">
-            <div class="mode-card">
-              <button
-                class="mode-trigger"
-                type="button"
-                role="radio"
-                aria-checked="false"
-                aria-expanded="false"
-                data-mode="data-collection"
-                data-mode-label="Data Collection"
-              >
-                <div class="mode-main">
-                  <div class="mode-icon" aria-hidden="true">
-                    <object data="/frontend/assets/settings_icon.svg" type="image/svg+xml"></object>
-                  </div>
-                  <div class="mode-text">
-                    <div class="mode-title">Data Collection</div>
-                    <div class="mode-sub">Save training data for analysis</div>
-                  </div>
-                  <div class="mode-chev" aria-hidden="true">&rsaquo;</div>
-                </div>
-              </button>
-              <div class="mode-options" aria-hidden="true">
-                <div class="mode-option">
-                  <span class="mode-option-label">Storage</span>
-                  <div class="mode-option-choices">
-                    <span class="mode-option-hint">Select the folder in Settings.</span>
-                  </div>
-                </div>
+          <div class="game-mode-option" id="game-mode-data-collection">
+            <object
+              data="/assets/images/settings_icon.svg"
+              type="image/svg+xml"
+              class="game-mode-icon"
+            ></object>
+
+            <h3 class="game-mode-title">Data Collection</h3>
+            <p class="game-mode-sub">Gather data for training</p>
+            <p class="game-mode-chev" aria-hidden="true">&rsaquo;</p>
+
+            <div class="game-mode-config">
+              <div class="game-mode-config-line">
+                <span class="game-mode-config-label"
+                  >For Developer</span
+                >
+                <p class="game-mode-config-info">
+                  Use this mode to collect dart throw data. No scoring will be recorded.
+                </p>
               </div>
             </div>
           </div>
 
-          <div class="mode-item">
-            <div class="mode-card is-disabled">
-              <button
-                class="mode-trigger"
-                type="button"
-                role="radio"
-                aria-checked="false"
-                aria-expanded="false"
-                data-mode="cricket"
-                disabled
-              >
-                <div class="mode-main">
-                  <div class="mode-icon" aria-hidden="true">
-                    <object data="/frontend/assets/crossed-darts_icon.svg" type="image/svg+xml"></object>
-                  </div>
-                  <div class="mode-text">
-                    <div class="mode-title">Cricket</div>
-                    <div class="mode-sub">Coming soon ...</div>
-                    <!-- <div class="mode-sub">Tactical numbers control</div> -->
-                  </div>
-                  <div class="mode-chev" aria-hidden="true">&rsaquo;</div>
-                </div>
-              </button>
-            </div>
+          <div class="game-mode-option" aria-disabled="true">
+            <object
+              data="/assets/images/crossed-darts_icon.svg"
+              type="image/svg+xml"
+              class="game-mode-icon"
+            ></object>
+
+            <h3 class="game-mode-title">Cricket</h3>
+            <p class="game-mode-sub">Coming soon...</p>
+            <p class="game-mode-chev" aria-hidden="true">&rsaquo;</p>
+
+            <div class="game-mode-config"></div>
           </div>
         </div>
       </section>
-      
-      <section class="number-of-players-selection" role="radiogroup" aria-label="Number of Players">
+
+      <section class="players">
         <h2>Players</h2>
-        <div class="number-of-players-options">
+        <div
+          class="player-count-options"
+          role="radiogroup"
+          aria-label="Player Count"
+        >
           <span class="players-frame" aria-hidden="true"></span>
           <button
-            class="number-of-players-card is-selected"
-            type="button"
             role="radio"
-            aria-checked="true"
-            data-players="1"
-          >1</button>
+            name="player-count"
+            value="1"
+            class="player-count-option"
+          >
+            1
+          </button>
           <button
-            class="number-of-players-card"
-            type="button"
             role="radio"
-            aria-checked="false"
-            data-players="2"
-          >2</button>
+            name="player-count"
+            value="2"
+            class="player-count-option"
+          >
+            2
+          </button>
           <button
-            class="number-of-players-card"
-            type="button"
             role="radio"
-            aria-checked="false"
-            data-players="3"
-          >3</button>
+            name="player-count"
+            value="3"
+            class="player-count-option"
+          >
+            3
+          </button>
           <button
-            class="number-of-players-card"
-            type="button"
             role="radio"
-            aria-checked="false"
-            data-players="4"
-          >4</button>
+            name="player-count"
+            value="4"
+            class="player-count-option"
+          >
+            4
+          </button>
           <button
-            class="number-of-players-card"
-            type="button"
             role="radio"
-            aria-checked="false"
-            data-players="5"
-          >5</button>
+            name="player-count"
+            value="5"
+            class="player-count-option"
+          >
+            5
+          </button>
           <button
-            class="number-of-players-card"
-            type="button"
             role="radio"
-            aria-checked="false"
-            data-players="6"
-          >6</button>
+            name="player-count"
+            value="6"
+            class="player-count-option"
+          >
+            6
+          </button>
         </div>
       </section>
     </main>
-    <footer>
+
+    <footer hidden>
       <a href="/game" class="start-game">Start Game</a>
-      <a href="/calibration" class="settings">
-        <object data="/frontend/assets/settings_icon.svg" type="image/svg+xml"></object>
+      <a href="/settings" class="settings" aria-label="Settings">
+        <object
+          data="/assets/images/settings_icon.svg"
+          type="image/svg+xml"
+        ></object>
       </a>
     </footer>
+
+    <div class="startup" aria-live="polite">
+      <h2>Warming up...</h2>
+      <div class="spinner"></div>
+    </div>
   </body>
 </html>

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Dart Scorer - Settings</title>
+    <link rel="stylesheet" href="/assets/css/style.css" />
+    <link rel="stylesheet" href="/assets/css/settings.css" />
+    <link rel="icon" href="/assets/images/favicon.svg" />
+    <script src="/assets/js/app.js" defer></script>
+    <script src="/assets/js/settings.js" defer></script>
+  </head>
+
+  <body>
+    <header>
+      <a href="/" aria-label="Back Home" class="back-button">
+        <object
+          data="/assets/images/chevron-left_icon.svg"
+          type="image/svg+xml"
+        ></object>
+      </a>
+      <h1>Settings</h1>
+    </header>
+    <main>
+      <section class="general-settings">
+        <h2>General</h2>
+        <div class="settings-line slider">
+          <label for="data-collection-toggle"
+            >Display "Data Collection" mode</label
+          >
+          <input
+            type="checkbox"
+            id="data-collection-toggle"
+            aria-checked="false"
+          />
+        </div>
+        <div class="settings-line" id="data-folder-line" aria-disabled="true">
+          <label for="data-folder-button">Data Folder (Chrome/Edge)</label>
+          <div>
+            <button id="data-folder-button" type="button">Choose Folder</button>
+            <span id="data-folder-name" class="folder-name">Not set</span>
+          </div>
+        </div>
+      </section>
+      <section class="cameras-calibration">
+        <h2>Cameras Calibration</h2>
+        <div class="cameras" aria-label="Camera previews">
+          <div class="cam-card" data-cam="cam1">
+            <div class="cam-tile">
+              <img id="cam1" alt="Camera 1 preview" />
+              <div class="cam-overlay">CAM 1</div>
+            </div>
+            <button
+              class="calibrate-btn"
+              type="button"
+              data-open-calibration="cam1"
+            >
+              Calibrate
+            </button>
+          </div>
+
+          <div class="cam-card" data-cam="cam2">
+            <div class="cam-tile">
+              <img id="cam2" alt="Camera 2 preview" />
+              <div class="cam-overlay">CAM 2</div>
+            </div>
+            <button
+              class="calibrate-btn"
+              type="button"
+              data-open-calibration="cam2"
+            >
+              Calibrate
+            </button>
+          </div>
+
+          <div class="cam-card" data-cam="cam3">
+            <div class="cam-tile">
+              <img id="cam3" alt="Camera 3 preview" />
+              <div class="cam-overlay">CAM 3</div>
+            </div>
+            <button
+              class="calibrate-btn"
+              type="button"
+              data-open-calibration="cam3"
+            >
+              Calibrate
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Camera Calibration Modal -->
+    <div
+      class="modal"
+      id="calibration-modal"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="modal-backdrop" data-close-modal></div>
+
+      <div class="modal-panel" role="document">
+        <header class="modal-header">
+          <h3 id="calibration-title">Calibration</h3>
+          <button
+            class="modal-close"
+            type="button"
+            data-close-modal
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </header>
+
+        <div class="modal-body">
+          <div class="modal-preview cam-tile" id="modal-preview-tile">
+            <img id="modal-image" alt="Calibration preview" />
+            <div class="cam-overlay" id="modal-cam-label">CAM</div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" data-modal-action="rotate_left">
+              <object
+                data="/assets/images/rotate-counter-cw_icon.svg"
+                type="image/svg+xml"
+              ></object>
+            </button>
+
+            <button type="button" data-modal-action="calibrate">
+              <object
+                data="/assets/images/dartboard_icon.svg"
+                type="image/svg+xml"
+              ></object>
+            </button>
+
+            <button type="button" data-modal-action="rotate_right">
+              <object
+                data="/assets/images/rotate-cw_icon.svg"
+                type="image/svg+xml"
+              ></object>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
