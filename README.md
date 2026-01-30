@@ -1,8 +1,8 @@
 # AI Dart Scorer
 
-Minimal FastAPI app that uploads a dartboard image, detects keypoints, and returns a processed preview image.
+Local FastAPI app that serves a web UI, streams dartboard cameras, and detects keypoints for calibration.
 
-## Setup
+## Quick start
 ```bash
 python -m venv .venv
 
@@ -14,14 +14,18 @@ source .venv/bin/activate
 
 python -m pip install -U pip
 python -m pip install -r requirements.txt
+uvicorn backend.main:app --reload --workers 1
 ```
 
-## Run
-```bash
-uvicorn backend.main:app --reload
-```
+Open:
+- http://localhost:8000/ (UI)
+- http://localhost:8000/settings
+- http://localhost:8000/game
 
-## Run and expose to LAN
+## Configure cameras
+Edit camera indices and resolution in `backend/core/lifespan.py`.
+
+## LAN run
 ```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
