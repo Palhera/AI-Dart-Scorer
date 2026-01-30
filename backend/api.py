@@ -10,7 +10,8 @@ from fastapi import APIRouter, Request, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.vision.keypoint_detection import compute_keypoints
-from backend.vision.calibration_store import update_warp_matrix
+from backend.vision.calibration_store import load_calibration, update_warp_matrix
+from backend.vision.reference import BOARD_DIAMETER_MM, REFERENCE_LINE_OUTER_MM
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -109,6 +110,16 @@ class CamAction(BaseModel):
     cam_id: str
     action: str  # "rotate_left" | "rotate_right" | "calibrate" | "reset"
 
+
+class ManualWarpPoint(BaseModel):
+    x: float
+    y: float
+
+
+class ManualWarpPayload(BaseModel):
+    cam_id: str
+    points: Tuple[ManualWarpPoint, ManualWarpPoint, ManualWarpPoint, ManualWarpPoint]
+
 @router.post("/api/camera/action")
 async def camera_action(payload: CamAction, request: Request):
     mgr = getattr(request.app.state, "camera_manager", None)
@@ -149,6 +160,72 @@ async def camera_action(payload: CamAction, request: Request):
         return {"ok": True}
 
     raise HTTPException(status_code=400, detail="Unknown action")
+
+
+@router.post("/api/camera/manual-warp")
+async def camera_manual_warp(payload: ManualWarpPayload, request: Request):
+    mgr = getattr(request.app.state, "camera_manager", None)
+    if mgr is None:
+        raise HTTPException(status_code=503, detail="Camera manager not initialized")
+
+    cam_id = payload.cam_id
+    if cam_id not in mgr.cams:
+        raise HTTPException(status_code=404, detail="Unknown camera")
+
+    frame = await asyncio.to_thread(mgr.capture_prepared_frame, cam_id, 1.0)
+    if frame is None:
+        raise HTTPException(status_code=503, detail="Camera frame unavailable")
+
+    height, width = frame.shape[:2]
+    size = min(width, height) - 1.0
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="Invalid frame size")
+
+    scale = float(size) / float(BOARD_DIAMETER_MM)
+    outer_px = float(REFERENCE_LINE_OUTER_MM) * scale
+    cx = (float(width) - 1.0) * 0.5
+    cy = (float(height) - 1.0) * 0.5
+
+    angles = np.radians([225.0, 315.0, 45.0, 135.0])
+    src = np.array(
+        [
+            [cx + outer_px * np.cos(theta), cy + outer_px * np.sin(theta)]
+            for theta in angles
+        ],
+        dtype=np.float32,
+    )
+
+    dst = np.array(
+        [
+            [float(pt.x) * float(width), float(pt.y) * float(height)]
+            for pt in payload.points
+        ],
+        dtype=np.float32,
+    )
+
+    try:
+        user_warp = cv2.getPerspectiveTransform(src, dst)
+    except cv2.error as exc:
+        raise HTTPException(status_code=400, detail="Invalid adjustment") from exc
+
+    try:
+        correction = np.linalg.inv(user_warp.astype(np.float64))
+    except np.linalg.LinAlgError as exc:
+        raise HTTPException(status_code=400, detail="Invalid adjustment (non-invertible)") from exc
+
+    data = load_calibration(cam_id, width, height)
+    warp = data.get("warp", {}) if isinstance(data, dict) else {}
+    h_raw = warp.get("matrix")
+    if h_raw is None:
+        base = np.eye(3, dtype=np.float64)
+    else:
+        base = np.asarray(h_raw, dtype=np.float64)
+        if base.shape != (3, 3):
+            base = np.eye(3, dtype=np.float64)
+
+    updated = correction @ base
+    update_warp_matrix(cam_id, width, height, updated)
+    return {"ok": True, "matrix": updated.tolist()}
 
 
 # -----------------------------
