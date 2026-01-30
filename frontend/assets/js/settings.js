@@ -113,10 +113,12 @@
   const modalTile = document.getElementById("modal-preview-tile");
   const modalLabel = document.getElementById("modal-cam-label");
   const modalTitle = document.getElementById("calibration-title");
+  const referenceOverlay = document.getElementById("modal-reference-overlay");
 
   if (!modal || !modalImg || !modalTile) return;
 
   let currentCam = null;
+  let overlayDrawPending = false;
 
   const callBackend = (camId, action) =>
     fetch("/api/camera/action", {
@@ -124,6 +126,79 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cam_id: camId, action }),
     });
+
+  const scheduleOverlayDraw = () => {
+    if (!referenceOverlay || overlayDrawPending) return;
+    overlayDrawPending = true;
+    requestAnimationFrame(() => {
+      overlayDrawPending = false;
+      drawReferenceOverlay();
+    });
+  };
+
+  const drawReferenceOverlay = () => {
+    if (!referenceOverlay || !modal.classList.contains("is-open")) return;
+    const ctx = referenceOverlay.getContext("2d");
+    if (!ctx) return;
+
+    const rect = modalTile.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    const dpr = window.devicePixelRatio || 1;
+
+    referenceOverlay.width = Math.round(width * dpr);
+    referenceOverlay.height = Math.round(height * dpr);
+    referenceOverlay.style.width = `${width}px`;
+    referenceOverlay.style.height = `${height}px`;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const boardDiameter = 451.0;
+    const ringRadii = [170.0, 162.0, 107.0, 99.0, 15.9, 6.35];
+    const lineInner = 15.9;
+    const lineOuter = 170.0;
+    const rotationRad = -(9 * Math.PI) / 180;
+    const canonicalAngles = Array.from({ length: 10 }, (_, i) => (i * Math.PI) / 10);
+
+    const size = Math.min(width, height) - 1;
+    if (size <= 0) return;
+
+    const scale = size / boardDiameter;
+    const cx = (width - 1) * 0.5;
+    const cy = (height - 1) * 0.5;
+
+    ctx.strokeStyle = "rgba(0, 229, 255, 0.92)";
+    ctx.lineWidth = Math.max(1.2, size / 600);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    for (const radiusMm of ringRadii) {
+      const radiusPx = radiusMm * scale;
+      if (radiusPx <= 0) continue;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radiusPx, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    const innerPx = lineInner * scale;
+    const outerPx = lineOuter * scale;
+    for (const angle of canonicalAngles) {
+      const theta = angle + rotationRad;
+      const dx = Math.cos(theta);
+      const dy = Math.sin(theta);
+
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * innerPx, cy + dy * innerPx);
+      ctx.lineTo(cx + dx * outerPx, cy + dy * outerPx);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(cx - dx * innerPx, cy - dy * innerPx);
+      ctx.lineTo(cx - dx * outerPx, cy - dy * outerPx);
+      ctx.stroke();
+    }
+  };
 
   const openModal = (camId) => {
     currentCam = camId;
@@ -139,6 +214,7 @@
     modal.classList.add("is-open");
     modal.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
+    scheduleOverlayDraw();
   };
 
   const closeModal = () => {
@@ -174,6 +250,17 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && modal.classList.contains("is-open")) closeModal();
   });
+
+  if (referenceOverlay && "ResizeObserver" in window) {
+    const observer = new ResizeObserver(() => {
+      if (modal.classList.contains("is-open")) scheduleOverlayDraw();
+    });
+    observer.observe(modalTile);
+  } else {
+    window.addEventListener("resize", () => {
+      if (modal.classList.contains("is-open")) scheduleOverlayDraw();
+    });
+  }
 
   // =============================
   // TEMP DEBUG: Homography upload (REMOVE BEFORE RELEASE)

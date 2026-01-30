@@ -6,7 +6,11 @@ from typing import Optional, Dict
 import cv2
 import numpy as np
 
-from backend.vision.calibration_store import CalibrationRuntime, update_warp_matrix
+from backend.vision.calibration_store import (
+    CalibrationRuntime,
+    rotate_warp_matrix,
+    update_warp_matrix,
+)
 from backend.vision.keypoint_detection import compute_homography_matrix
 
 
@@ -102,6 +106,21 @@ class CameraRunner:
 
         update_warp_matrix(self.cam_id, frame.shape[1], frame.shape[0], matrix)
         return matrix
+
+    def rotate_homography(self, angle_deg: float) -> Optional[np.ndarray]:
+        width, height = self._output_size
+        try:
+            return rotate_warp_matrix(self.cam_id, width, height, angle_deg)
+        except Exception:
+            return None
+
+    def reset_homography(self) -> bool:
+        width, height = self._output_size
+        try:
+            update_warp_matrix(self.cam_id, width, height, None)
+            return True
+        except Exception:
+            return False
 
     def _center_crop_square(self, frame: np.ndarray) -> np.ndarray:
         h, w = frame.shape[:2]
@@ -214,3 +233,15 @@ class CameraManager:
         if not cam:
             return None
         return cam.calibrate_homography()
+
+    def rotate_homography(self, cam_id: str, angle_deg: float) -> Optional[np.ndarray]:
+        cam = self.cams.get(cam_id)
+        if not cam:
+            return None
+        return cam.rotate_homography(angle_deg)
+
+    def reset_homography(self, cam_id: str) -> bool:
+        cam = self.cams.get(cam_id)
+        if not cam:
+            return False
+        return cam.reset_homography()

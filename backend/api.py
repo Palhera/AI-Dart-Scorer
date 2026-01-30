@@ -18,6 +18,7 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 
 router = APIRouter()
 SNAPSHOT_DIR = CALIBRATION_DIR / "snapshots"
+ROTATE_STEP_DEG = 18.0
 
 def _save_snapshot_png(cam_id: str, png_bytes: bytes) -> Path:
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -125,7 +126,7 @@ async def stream_camera(cam_id: str, request: Request):
 # -----------------------------
 class CamAction(BaseModel):
     cam_id: str
-    action: str  # "rotate_left" | "rotate_right" | "calibrate"
+    action: str  # "rotate_left" | "rotate_right" | "calibrate" | "reset"
 
 @router.post("/api/camera/action")
 async def camera_action(payload: CamAction, request: Request):
@@ -140,13 +141,15 @@ async def camera_action(payload: CamAction, request: Request):
         raise HTTPException(status_code=404, detail="Unknown camera")
 
     if action == "rotate_left":
-        # Do something
-        print(f"Rotating camera {cam_id} left")
+        rotated = mgr.rotate_homography(cam_id, -ROTATE_STEP_DEG)
+        if rotated is None:
+            raise HTTPException(status_code=409, detail="No homography available to rotate")
         return {"ok": True}
 
     if action == "rotate_right":
-        # Do something
-        print(f"Rotating camera {cam_id} right")
+        rotated = mgr.rotate_homography(cam_id, ROTATE_STEP_DEG)
+        if rotated is None:
+            raise HTTPException(status_code=409, detail="No homography available to rotate")
         return {"ok": True}
 
     if action == "calibrate":
@@ -168,6 +171,11 @@ async def camera_action(payload: CamAction, request: Request):
         payload["snapshot_filename"] = snapshot_path.name
         payload["snapshot_url"] = f"/api/camera/snapshot/{snapshot_path.name}"
         return payload
+
+    if action == "reset":
+        if not mgr.reset_homography(cam_id):
+            raise HTTPException(status_code=500, detail="Failed to reset homography")
+        return {"ok": True}
 
     raise HTTPException(status_code=400, detail="Unknown action")
 

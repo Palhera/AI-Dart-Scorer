@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -80,6 +81,66 @@ def update_warp_matrix(
     with path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
     return data
+
+
+def _rotation_homography(angle_deg: float, width: int, height: int) -> np.ndarray:
+    if width <= 0 or height <= 0:
+        raise ValueError("Image size must be positive for rotation.")
+
+    cx = (float(width) - 1.0) * 0.5
+    cy = (float(height) - 1.0) * 0.5
+    theta = math.radians(float(angle_deg))
+    c = math.cos(theta)
+    s = math.sin(theta)
+
+    rot = np.array(
+        [
+            [c, -s, 0.0],
+            [s, c, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    t1 = np.array(
+        [
+            [1.0, 0.0, -cx],
+            [0.0, 1.0, -cy],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    t2 = np.array(
+        [
+            [1.0, 0.0, cx],
+            [0.0, 1.0, cy],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    return t2 @ rot @ t1
+
+
+def rotate_warp_matrix(
+    cam_id: str,
+    width: int,
+    height: int,
+    angle_deg: float,
+) -> np.ndarray:
+    data = load_calibration(cam_id, width, height)
+    warp = data.get("warp", {}) if isinstance(data, dict) else {}
+    h_raw = warp.get("matrix")
+
+    if h_raw is None:
+        base = np.eye(3, dtype=np.float64)
+    else:
+        base = np.asarray(h_raw, dtype=np.float64)
+        if base.shape != (3, 3):
+            raise ValueError(f"Expected 3x3 homography matrix, got {base.shape}.")
+
+    rot = _rotation_homography(angle_deg, width, height)
+    rotated = rot @ base
+    update_warp_matrix(cam_id, width, height, rotated)
+    return rotated
 
 
 class CalibrationRuntime:

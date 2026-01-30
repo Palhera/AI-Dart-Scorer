@@ -129,19 +129,29 @@
       <div class="modal-panel" role="document">
         <header class="modal-header">
           <h3 id="calibration-title">Calibration</h3>
-          <button
-            class="modal-close"
-            type="button"
-            data-close-modal
-            aria-label="Close"
-          >
-            ×
-          </button>
+          <div class="modal-header-actions">
+            <button
+              class="modal-reset"
+              type="button"
+              data-modal-action="reset"
+            >
+              Reset
+            </button>
+            <button
+              class="modal-close"
+              type="button"
+              data-close-modal
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
         </header>
 
         <div class="modal-body">
           <div class="modal-preview cam-tile" id="modal-preview-tile">
             <img id="modal-image" alt="Calibration preview" />
+            <canvas id="modal-reference-overlay" aria-hidden="true"></canvas>
             <div class="cam-overlay" id="modal-cam-label">CAM</div>
           </div>
 
