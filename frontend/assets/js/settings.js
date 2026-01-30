@@ -174,4 +174,71 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && modal.classList.contains("is-open")) closeModal();
   });
+
+  // =============================
+  // TEMP DEBUG: Homography upload (REMOVE BEFORE RELEASE)
+  // =============================
+  const debugInput = document.getElementById("debug-image-input");
+  const debugRun = document.getElementById("debug-run-btn");
+  const debugImg = document.getElementById("debug-result-image");
+  const debugMatrix = document.getElementById("debug-matrix");
+  const debugStatus = document.getElementById("debug-status");
+
+  if (debugInput && debugRun && debugImg && debugMatrix && debugStatus) {
+    const setDebugStatus = (msg, isError = false) => {
+      debugStatus.textContent = msg;
+      debugStatus.classList.toggle("is-error", isError);
+    };
+
+    const renderMatrix = (matrix) => {
+      if (!matrix) {
+        debugMatrix.textContent = "Matrix: null";
+        return;
+      }
+      debugMatrix.textContent = JSON.stringify(matrix, null, 2);
+    };
+
+    const runDebug = async () => {
+      const file = debugInput.files?.[0];
+      if (!file) {
+        setDebugStatus("Choose an image first.", true);
+        return;
+      }
+
+      debugRun.disabled = true;
+      setDebugStatus("Processing...");
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch("/keypoints", { method: "POST", body: formData });
+        if (!res.ok) {
+          let detail = `Request failed (${res.status})`;
+          try {
+            const err = await res.json();
+            if (err?.detail) detail = err.detail;
+          } catch {}
+          throw new Error(detail);
+        }
+
+        const data = await res.json();
+        if (data?.image) {
+          debugImg.src = `data:image/png;base64,${data.image}`;
+        }
+        renderMatrix(data?.total_warp_matrix);
+        setDebugStatus("Done.");
+      } catch (err) {
+        setDebugStatus(err?.message || "Failed to compute homography.", true);
+      } finally {
+        debugRun.disabled = false;
+      }
+    };
+
+    debugRun.addEventListener("click", runDebug);
+    debugInput.addEventListener("change", () => {
+      if (debugInput.files?.length) {
+        setDebugStatus("");
+      }
+    });
+  }
 })();

@@ -23,26 +23,20 @@ CLOSE_ITERS = 2
 SUPPORT_SAMPLES = 160
 
 
-def _odd_kernel_size(k: int) -> int:
-    k = max(1, int(k))
-    return k + 1 if (k % 2 == 0) else k
-
-
-_MASK_KERNEL_ODD = _odd_kernel_size(MASK_KERNEL)
-_MASK_MORPH_KERNEL = cv2.getStructuringElement(
-    cv2.MORPH_ELLIPSE, (_MASK_KERNEL_ODD, _MASK_KERNEL_ODD)
-)
-
-
 def build_white_mask(img_bgr: np.ndarray) -> np.ndarray:
     img_bgr = ensure_bgr_u8(img_bgr)
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     _, mask_u8 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
+    k = max(1, int(MASK_KERNEL))
+    if k % 2 == 0:
+        k += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+
     if OPEN_ITERS > 0:
-        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, _MASK_MORPH_KERNEL, iterations=OPEN_ITERS)
+        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, kernel, iterations=OPEN_ITERS)
     if CLOSE_ITERS > 0:
-        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, _MASK_MORPH_KERNEL, iterations=CLOSE_ITERS)
+        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel, iterations=CLOSE_ITERS)
 
     return mask_u8
 
@@ -88,10 +82,10 @@ def detect_lines_from_mask(mask_u8: np.ndarray) -> dict:
     if mask_u8.ndim == 3:
         mask_u8 = cv2.cvtColor(mask_u8, cv2.COLOR_BGR2GRAY)
 
-    h, w = mask_u8.shape[:2]
     edges = cv2.Canny(mask_u8, CANNY_LOW, CANNY_HIGH)
-
+    h, w = mask_u8.shape[:2]
     votes = max(HOUGH_MIN_VOTES, int(min(h, w) * HOUGH_VOTES_FRAC))
+
     raw_lines = cv2.HoughLines(edges, HOUGH_RHO, HOUGH_THETA, votes)
     lines = _select_unique_lines(raw_lines)
 

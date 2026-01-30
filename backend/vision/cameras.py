@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from typing import Optional, Dict
 
 import cv2
+import numpy as np
 
-from backend.vision.calibration_store import CalibrationRuntime
+from backend.vision.calibration_store import CalibrationRuntime, update_warp_matrix
+from backend.vision.keypoint_detection import compute_homography_matrix
 
 
 @dataclass
@@ -30,6 +32,7 @@ class CameraRunner:
 
         self._lock = threading.Lock()
         self._latest_jpeg: Optional[bytes] = None
+        self._latest_frame: Optional[np.ndarray] = None
         self._is_open = False
 
     def start(self) -> None:
@@ -58,6 +61,42 @@ class CameraRunner:
     def get_latest_jpeg(self) -> Optional[bytes]:
         with self._lock:
             return self._latest_jpeg
+
+    def get_latest_frame(self) -> Optional[np.ndarray]:
+        with self._lock:
+            if self._latest_frame is None:
+                return None
+            return self._latest_frame.copy()
+
+    def calibrate_homography(self) -> Optional[np.ndarray]:
+        frame = self.get_latest_frame()
+        if frame is None:
+            return None
+
+        frame = self._prepare_frame(frame)
+        matrix = compute_homography_matrix(frame)
+        if matrix is None:
+            return None
+
+        update_warp_matrix(self.cam_id, frame.shape[1], frame.shape[0], matrix)
+        return matrix
+
+    def _center_crop_square(self, frame: np.ndarray) -> np.ndarray:
+        h, w = frame.shape[:2]
+        if w == h:
+            return frame
+        if w > h:
+            x0 = (w - h) // 2
+            return frame[:, x0 : x0 + h]
+        y0 = (h - w) // 2
+        return frame[y0 : y0 + w, :]
+
+    def _prepare_frame(self, frame: np.ndarray) -> np.ndarray:
+        frame = self._calibration.undistort(frame)
+        frame = self._center_crop_square(frame)
+        if frame.shape[1] != self._output_size[0] or frame.shape[0] != self._output_size[1]:
+            frame = cv2.resize(frame, self._output_size, interpolation=cv2.INTER_LINEAR)
+        return frame
 
     def _open(self) -> None:
         cap = cv2.VideoCapture(self.cfg.index, cv2.CAP_DSHOW)
@@ -88,17 +127,11 @@ class CameraRunner:
                     time.sleep(0.2)
                     continue
 
-                frame = self._calibration.apply(frame)
-                h, w = frame.shape[:2]
-                if w != h:
-                    if w > h:
-                        x0 = (w - h) // 2
-                        frame = frame[:, x0 : x0 + h]
-                    else:
-                        y0 = (h - w) // 2
-                        frame = frame[y0 : y0 + w, :]
-                if frame.shape[1] != self._output_size[0] or frame.shape[0] != self._output_size[1]:
-                    frame = cv2.resize(frame, self._output_size, interpolation=cv2.INTER_LINEAR)
+                with self._lock:
+                    self._latest_frame = frame
+
+                frame = self._prepare_frame(frame)
+                frame = self._calibration.warp(frame)
 
                 ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                 if ok:
@@ -139,3 +172,9 @@ class CameraManager:
         if not cam:
             return None
         return cam.get_latest_jpeg()
+
+    def calibrate_homography(self, cam_id: str) -> Optional[np.ndarray]:
+        cam = self.cams.get(cam_id)
+        if not cam:
+            return None
+        return cam.calibrate_homography()

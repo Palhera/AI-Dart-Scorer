@@ -52,6 +52,36 @@ def load_calibration(cam_id: str, width: int, height: int) -> Dict[str, Any]:
     return data
 
 
+def update_warp_matrix(
+    cam_id: str,
+    width: int,
+    height: int,
+    matrix: Optional[np.ndarray],
+) -> Dict[str, Any]:
+    path = ensure_calibration_file(cam_id, width, height)
+    data = load_calibration(cam_id, width, height)
+
+    if not isinstance(data, dict):
+        data = _default_calibration(cam_id, width, height)
+
+    data["camera_id"] = cam_id
+    data["image_size"] = {"width": int(width), "height": int(height)}
+
+    warp = data.get("warp", {}) if isinstance(data.get("warp"), dict) else {}
+    if matrix is None:
+        warp["matrix"] = None
+    else:
+        mat = np.asarray(matrix, dtype=np.float64)
+        if mat.shape != (3, 3):
+            raise ValueError(f"Expected 3x3 homography matrix, got {mat.shape}.")
+        warp["matrix"] = mat.tolist()
+    data["warp"] = warp
+
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+    return data
+
+
 class CalibrationRuntime:
     def __init__(self, cam_id: str, width: int, height: int):
         self.cam_id = cam_id
@@ -69,9 +99,23 @@ class CalibrationRuntime:
     def apply(self, frame: np.ndarray) -> np.ndarray:
         try:
             self._maybe_reload()
-            out = self._apply_undistort(frame)
+            out = self.undistort(frame)
             out = self._apply_warp(out)
             return out
+        except Exception:
+            return frame
+
+    def undistort(self, frame: np.ndarray) -> np.ndarray:
+        try:
+            self._maybe_reload()
+            return self._apply_undistort(frame)
+        except Exception:
+            return frame
+
+    def warp(self, frame: np.ndarray) -> np.ndarray:
+        try:
+            self._maybe_reload()
+            return self._apply_warp(frame)
         except Exception:
             return frame
 

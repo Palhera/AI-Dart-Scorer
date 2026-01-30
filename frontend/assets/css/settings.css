@@ -350,3 +350,91 @@ section:last-of-type {
 .modal-actions button:active {
   transform: translateY(1px);
 }
+
+/* TEMP DEBUG SECTION - REMOVE BEFORE RELEASE */
+.debug-homography {
+  gap: 12px;
+}
+
+.debug-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.debug-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.debug-controls input[type="file"] {
+  flex: 1 1 240px;
+  color: var(--text-muted);
+}
+
+.debug-controls button {
+  height: 40px;
+  padding: 0 16px;
+  background: var(--button-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.debug-controls button:hover {
+  background: var(--button-bg-hover);
+}
+
+.debug-output {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.debug-preview {
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  aspect-ratio: 1 / 1;
+}
+
+.debug-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+#debug-matrix {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.debug-status {
+  min-height: 18px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.debug-status.is-error {
+  color: #ff6b6b;
+}
+
+@media (max-width: 900px) {
+  .debug-output {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

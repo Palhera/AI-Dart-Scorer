@@ -1,9 +1,14 @@
-from pathlib import Path
 import asyncio
+import base64
+from pathlib import Path
 from pydantic import BaseModel
 
-from fastapi import APIRouter, Request, HTTPException
+import cv2
+import numpy as np
+from fastapi import APIRouter, Request, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+
+from backend.vision.keypoint_detection import compute_keypoints
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -94,8 +99,36 @@ async def camera_action(payload: CamAction, request: Request):
         return {"ok": True}
 
     if action == "calibrate":
-        # Do something
         print(f"Calibrating camera {cam_id}")
+        matrix = await asyncio.to_thread(mgr.calibrate_homography, cam_id)
+        if matrix is None:
+            raise HTTPException(status_code=400, detail="Homography calibration failed")
         return {"ok": True}
 
     raise HTTPException(status_code=400, detail="Unknown action")
+
+
+# -----------------------------
+# TEMP DEBUG UPLOAD - REMOVE BEFORE RELEASE
+# -----------------------------
+@router.post("/keypoints", include_in_schema=False)
+async def keypoints_debug(file: UploadFile = File(...)):
+    data = await file.read()
+    image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(status_code=400, detail="Invalid image")
+
+    result = compute_keypoints(image)
+    if result is None:
+        raise HTTPException(status_code=500, detail="No result generated")
+
+    result_img, total_matrix = result
+    ok_result, result_png = cv2.imencode(".png", result_img)
+    if not ok_result:
+        raise HTTPException(status_code=500, detail="Failed to encode result")
+
+    payload = {"image": base64.b64encode(result_png.tobytes()).decode("ascii")}
+    payload["total_warp_matrix"] = (
+        total_matrix.tolist() if isinstance(total_matrix, np.ndarray) else None
+    )
+    return payload

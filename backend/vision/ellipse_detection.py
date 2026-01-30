@@ -21,51 +21,28 @@ MORPH_KERNEL = 5
 CLOSE_ITERS = 2
 
 
-def _odd_kernel_size(k: int) -> int:
-    k = max(1, int(k))
-    return k + 1 if (k % 2 == 0) else k
-
-
-_LOW_GREEN = np.array(LOW_GREEN, dtype=np.uint8)
-_HIGH_GREEN = np.array(HIGH_GREEN, dtype=np.uint8)
-_LOW_RED_1 = np.array(LOW_RED_1, dtype=np.uint8)
-_HIGH_RED_1 = np.array(HIGH_RED_1, dtype=np.uint8)
-_LOW_RED_2 = np.array(LOW_RED_2, dtype=np.uint8)
-_HIGH_RED_2 = np.array(HIGH_RED_2, dtype=np.uint8)
-
-_MORPH_KERNEL_ODD = _odd_kernel_size(MORPH_KERNEL)
-_MORPH_CLOSE_KERNEL = cv2.getStructuringElement(
-    cv2.MORPH_ELLIPSE, (_MORPH_KERNEL_ODD, _MORPH_KERNEL_ODD)
-)
-
-
-def detect_outer_ellipse(img_bgr: np.ndarray) -> Optional[Ellipse]:
-    """
-    Detect the best outer ellipse on a dartboard by:
-      1) building a red+green HSV mask internally,
-      2) closing it morphologically,
-      3) fitting ellipses on external contours and selecting the best candidate.
-
-    Input:
-      - img_bgr: BGR uint8 image (will be normalized via ensure_bgr_u8)
-
-    Output:
-      - Ellipse ((cx, cy), (major, minor), angle_deg) or None
-    """
+def build_red_green_mask(img_bgr: np.ndarray) -> np.ndarray:
     img_bgr = ensure_bgr_u8(img_bgr)
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
 
-    green = cv2.inRange(hsv, _LOW_GREEN, _HIGH_GREEN)
-    red1 = cv2.inRange(hsv, _LOW_RED_1, _HIGH_RED_1)
-    red2 = cv2.inRange(hsv, _LOW_RED_2, _HIGH_RED_2)
+    green = cv2.inRange(hsv, np.array(LOW_GREEN, dtype=np.uint8), np.array(HIGH_GREEN, dtype=np.uint8))
+    red1 = cv2.inRange(hsv, np.array(LOW_RED_1, dtype=np.uint8), np.array(HIGH_RED_1, dtype=np.uint8))
+    red2 = cv2.inRange(hsv, np.array(LOW_RED_2, dtype=np.uint8), np.array(HIGH_RED_2, dtype=np.uint8))
 
-    mask_u8 = cv2.bitwise_or(green, red1)
-    mask_u8 = cv2.bitwise_or(mask_u8, red2)
+    return cv2.bitwise_or(green, cv2.bitwise_or(red1, red2))
+
+
+def detect_outer_ellipse(mask_u8: np.ndarray) -> Optional[Ellipse]:
+    if mask_u8.ndim == 3:
+        mask_u8 = cv2.cvtColor(mask_u8, cv2.COLOR_BGR2GRAY)
+
+    k = max(1, int(MORPH_KERNEL))
+    if k % 2 == 0:
+        k += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
 
     if CLOSE_ITERS > 0:
-        mask_u8 = cv2.morphologyEx(
-            mask_u8, cv2.MORPH_CLOSE, _MORPH_CLOSE_KERNEL, iterations=CLOSE_ITERS
-        )
+        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel, iterations=CLOSE_ITERS)
 
     contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:

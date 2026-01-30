@@ -88,6 +88,32 @@
           </div>
         </div>
       </section>
+
+      <!-- TEMP DEBUG SECTION - REMOVE BEFORE RELEASE -->
+      <section class="debug-homography" data-debug-remove>
+        <h2>Debug: Homography (TEMP)</h2>
+        <p class="debug-note">
+          Upload a single image to compute the homography using the same pipeline as
+          the live calibration.
+        </p>
+        <div class="debug-controls">
+          <input
+            type="file"
+            id="debug-image-input"
+            accept="image/*"
+            aria-label="Choose an image for homography debug"
+          />
+          <button type="button" id="debug-run-btn">Run Debug</button>
+        </div>
+        <div class="debug-output">
+          <div class="debug-preview">
+            <img id="debug-result-image" alt="Homography debug result" />
+          </div>
+          <pre id="debug-matrix" aria-live="polite">Matrix: n/a</pre>
+        </div>
+        <div id="debug-status" class="debug-status" aria-live="polite"></div>
+      </section>
+      <!-- /TEMP DEBUG SECTION -->
     </main>
 
     <!-- Camera Calibration Modal -->
