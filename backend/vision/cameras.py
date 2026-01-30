@@ -31,8 +31,10 @@ class CameraRunner:
         self._stop = threading.Event()
 
         self._lock = threading.Lock()
+        self._frame_cond = threading.Condition(self._lock)
         self._latest_jpeg: Optional[bytes] = None
         self._latest_frame: Optional[np.ndarray] = None
+        self._latest_frame_seq = 0
         self._is_open = False
 
     def start(self) -> None:
@@ -67,6 +69,26 @@ class CameraRunner:
             if self._latest_frame is None:
                 return None
             return self._latest_frame.copy()
+
+    def capture_frame(self, timeout: float = 1.0) -> Optional[np.ndarray]:
+        deadline = time.monotonic() + max(float(timeout), 0.0)
+        with self._lock:
+            start_seq = self._latest_frame_seq
+            while True:
+                if self._latest_frame is not None and self._latest_frame_seq != start_seq:
+                    return self._latest_frame.copy()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    if self._latest_frame is None:
+                        return None
+                    return self._latest_frame.copy()
+                self._frame_cond.wait(timeout=remaining)
+
+    def capture_prepared_frame(self, timeout: float = 1.0) -> Optional[np.ndarray]:
+        frame = self.capture_frame(timeout=timeout)
+        if frame is None:
+            return None
+        return self._prepare_frame(frame)
 
     def calibrate_homography(self) -> Optional[np.ndarray]:
         frame = self.get_latest_frame()
@@ -129,6 +151,8 @@ class CameraRunner:
 
                 with self._lock:
                     self._latest_frame = frame
+                    self._latest_frame_seq += 1
+                    self._frame_cond.notify_all()
 
                 frame = self._prepare_frame(frame)
                 frame = self._calibration.warp(frame)
@@ -172,6 +196,18 @@ class CameraManager:
         if not cam:
             return None
         return cam.get_latest_jpeg()
+
+    def capture_frame(self, cam_id: str, timeout: float = 1.0) -> Optional[np.ndarray]:
+        cam = self.cams.get(cam_id)
+        if not cam:
+            return None
+        return cam.capture_frame(timeout=timeout)
+
+    def capture_prepared_frame(self, cam_id: str, timeout: float = 1.0) -> Optional[np.ndarray]:
+        cam = self.cams.get(cam_id)
+        if not cam:
+            return None
+        return cam.capture_prepared_frame(timeout=timeout)
 
     def calibrate_homography(self, cam_id: str) -> Optional[np.ndarray]:
         cam = self.cams.get(cam_id)
