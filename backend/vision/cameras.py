@@ -20,6 +20,7 @@ class CameraConfig:
     width: int = 720
     height: int = 720
     fps: int = 30
+    jpeg_fps: int = 15
 
 
 class CameraRunner:
@@ -40,6 +41,7 @@ class CameraRunner:
         self._latest_frame: Optional[np.ndarray] = None
         self._latest_frame_seq = 0
         self._is_open = False
+        self._last_jpeg_ts = 0.0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -173,6 +175,12 @@ class CameraRunner:
                     self._latest_frame_seq += 1
                     self._frame_cond.notify_all()
 
+                now = time.monotonic()
+                jpeg_interval = 1.0 / max(float(self.cfg.jpeg_fps), 1.0)
+                if now - self._last_jpeg_ts < jpeg_interval:
+                    time.sleep(0.001)
+                    continue
+
                 frame = self._prepare_frame(frame)
                 frame = self._calibration.warp(frame)
 
@@ -181,6 +189,7 @@ class CameraRunner:
                     data = buf.tobytes()
                     with self._lock:
                         self._latest_jpeg = data
+                    self._last_jpeg_ts = now
 
                 time.sleep(0.001)
 

@@ -1,5 +1,20 @@
 (() => {
   // =============================
+  // Back navigation
+  // =============================
+  const backLink = document.querySelector("[data-back-link]");
+  if (backLink) {
+    backLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = "/";
+      }
+    });
+  }
+
+  // =============================
   // General settings
   // =============================
   const toggle = document.getElementById("data-collection-toggle");
@@ -45,6 +60,9 @@
         try {
           const h = await window.showDirectoryPicker();
           if (h?.name) {
+            try {
+              await window.aiDartScorerFS?.saveDirectoryHandle(h);
+            } catch {}
             localStorage.setItem(KEYS.folder, h.name);
             setFolder(h.name);
           }

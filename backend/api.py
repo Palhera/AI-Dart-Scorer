@@ -54,6 +54,13 @@ def chrome_devtools_manifest():
 def game():
     return FileResponse(FRONTEND_DIR / "game.html", media_type="text/html")
 
+@router.get("/game/data-collection", include_in_schema=False)
+def game_data_collection():
+    return FileResponse(
+        FRONTEND_DIR / "game-modes" / "data-collection.html",
+        media_type="text/html",
+    )
+
 @router.get("/settings", include_in_schema=False)
 def settings():
     return FileResponse(FRONTEND_DIR / "settings.html", media_type="text/html")

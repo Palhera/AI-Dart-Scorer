@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Dart Scorer - Data Collection</title>
+    <link rel="stylesheet" href="/assets/css/style.css" />
+    <link rel="stylesheet" href="/assets/css/game.css" />
+    <link rel="icon" href="/assets/images/favicon.svg" />
+    <script src="/assets/js/fs-handles.js" defer></script>
+    <script src="/assets/js/data-collection.js" defer></script>
+  </head>
+
+  <body class="game-mode-page data-collection">
+    <header class="game-mode-header">
+      <a href="/" aria-label="Back Home" class="back-button">
+        <object
+          data="/assets/images/chevron-left_icon.svg"
+          type="image/svg+xml"
+        ></object>
+      </a>
+      <div class="game-mode-heading">
+        <h1>Data Collection</h1>
+        <p>Capture homography-corrected frames for training.</p>
+      </div>
+      <a href="/settings" class="settings" aria-label="Settings">
+        <object
+          data="/assets/images/settings_icon.svg"
+          type="image/svg+xml"
+        ></object>
+      </a>
+    </header>
+
+    <main class="dc-main">
+      <section class="panel dc-streams">
+        <div class="dc-grid" aria-label="Camera feeds">
+          <div class="dc-cam-card" data-cam="cam1">
+            <div class="dc-cam-tile">
+              <img id="dc-cam1" alt="Camera 1 stream" />
+              <div class="dc-cam-label">CAM 1</div>
+            </div>
+          </div>
+
+          <div class="dc-cam-card" data-cam="cam2">
+            <div class="dc-cam-tile">
+              <img id="dc-cam2" alt="Camera 2 stream" />
+              <div class="dc-cam-label">CAM 2</div>
+            </div>
+          </div>
+
+          <div class="dc-cam-card" data-cam="cam3">
+            <div class="dc-cam-tile">
+              <img id="dc-cam3" alt="Camera 3 stream" />
+              <div class="dc-cam-label">CAM 3</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel dc-controls">
+        <div class="dc-meta">
+          <div>
+            Folder:
+            <span id="dc-folder-name" class="dc-folder-name">Not set</span>
+          </div>
+          <div>
+            Next ID:
+            <span id="dc-next-id" class="dc-next-id">00001</span>
+          </div>
+        </div>
+
+        <button id="dc-capture-btn" class="dc-capture-btn" type="button">
+          Capture (Space)
+        </button>
+
+        <p class="dc-hint">
+          Throw a dart, press Space, repeat. Remove darts after the third capture.
+        </p>
+
+        <div id="dc-status" class="dc-status" aria-live="polite"></div>
+      </section>
+    </main>
+  </body>
+</html>

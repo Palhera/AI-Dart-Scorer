@@ -38,7 +38,7 @@ if (hasStartupUI) {
 }
 
 /* ----- Data Collection Mode Visibility ----- */
-(() => {
+const applyDataCollectionVisibility = () => {
   const option = document.getElementById("game-mode-data-collection");
   if (!option) return;
 
@@ -48,7 +48,25 @@ if (hasStartupUI) {
   option.hidden = !show;
   option.setAttribute("aria-hidden", String(!show));
   option.setAttribute("aria-disabled", show ? "false" : "true");
-})();
+};
+
+applyDataCollectionVisibility();
+
+window.addEventListener("pageshow", () => {
+  applyDataCollectionVisibility();
+  if (typeof refreshGameModeHeights === "function") {
+    window.requestAnimationFrame(refreshGameModeHeights);
+  }
+});
+
+window.addEventListener("storage", (event) => {
+  if (event.key === "aiDartScorer.settings.showDataCollection") {
+    applyDataCollectionVisibility();
+    if (typeof refreshGameModeHeights === "function") {
+      window.requestAnimationFrame(refreshGameModeHeights);
+    }
+  }
+});
 
 /* ----- Game Mode Selection ----- */
 (() => {
@@ -219,14 +237,22 @@ if (hasStartupUI) {
     const checkIn = getCheckedValue(modeOption, "checkin-");
     const players = getSelectedPlayers();
 
+    const modeRoutes = {
+      "Data Collection": "/game/data-collection",
+    };
+    const basePath = modeRoutes[modeTitle] || "/game";
+    const includeParams = basePath === "/game";
+
     const params = new URLSearchParams();
-    if (modeTitle) params.set("mode", modeTitle);
-    if (checkIn) params.set("checkIn", checkIn);
-    if (checkOut) params.set("checkOut", checkOut);
-    if (players) params.set("players", players);
+    if (includeParams) {
+      if (modeTitle) params.set("mode", modeTitle);
+      if (checkIn) params.set("checkIn", checkIn);
+      if (checkOut) params.set("checkOut", checkOut);
+      if (players) params.set("players", players);
+    }
 
     const query = params.toString();
-    startLink.setAttribute("href", query ? `/game?${query}` : "/game");
+    startLink.setAttribute("href", query ? `${basePath}?${query}` : basePath);
   };
 
   startLink.addEventListener("click", updateStartLink);

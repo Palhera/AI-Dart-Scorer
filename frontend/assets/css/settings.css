@@ -145,6 +145,7 @@ section:last-of-type {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  margin-bottom: 12px;
 }
 
 .cam-card {
