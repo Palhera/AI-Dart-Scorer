@@ -16,17 +16,33 @@ async def _init_cameras(app: FastAPI):
     )
     app.state.camera_manager.start_all()
 
-    timeout_s = 10.0
+    timeout_s = 50.0
     loop = asyncio.get_event_loop()
     t0 = loop.time()
+    timed_out = False
     while not app.state.camera_manager.all_ready():
         if loop.time() - t0 > timeout_s:
-            print("WARNING: cameras not all ready within timeout")
-            return
+            missing = [
+                cam_id
+                for cam_id, cam in app.state.camera_manager.cams.items()
+                if not cam.is_open()
+            ]
+            if missing:
+                print(
+                    "WARNING: cameras not all ready within timeout "
+                    f"(missing: {', '.join(missing)})"
+                )
+            else:
+                print("WARNING: cameras not all ready within timeout")
+            timed_out = True
+            break
         await asyncio.sleep(0.1)
 
     app.state.ready = True
-    print("Cameras ready -> state.ready = True")
+    if timed_out:
+        print("Backend ready with missing cameras -> state.ready = True")
+    else:
+        print("Cameras ready -> state.ready = True")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

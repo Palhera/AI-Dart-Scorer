@@ -1,7 +1,8 @@
+import platform
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 import cv2
 import numpy as np
@@ -142,19 +143,60 @@ class CameraRunner:
         return frame
 
     def _open(self) -> None:
-        cap = cv2.VideoCapture(self.cfg.index, cv2.CAP_DSHOW)
+        backends = self._candidate_backends()
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
-        cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
+        for backend in backends:
+            cap = cv2.VideoCapture(self.cfg.index, backend)
 
-        ok, _ = cap.read()
-        if not ok:
-            cap.release()
-            raise RuntimeError(f"Camera {self.cam_id} (index={self.cfg.index}) cannot read frames")
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
+            cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
 
-        self._cap = cap
-        self._is_open = True
+            if not cap.isOpened():
+                cap.release()
+                continue
+
+            ok = False
+            for _ in range(5):
+                ok, _ = cap.read()
+                if ok:
+                    break
+                time.sleep(0.1)
+
+            if not ok:
+                cap.release()
+                continue
+
+            self._cap = cap
+            self._is_open = True
+            return
+
+        raise RuntimeError(
+            f"Camera {self.cam_id} (index={self.cfg.index}) cannot read frames"
+        )
+
+    @staticmethod
+    def _candidate_backends() -> List[int]:
+        system = platform.system().lower()
+        if system == "windows":
+            raw = [cv2.CAP_DSHOW, getattr(cv2, "CAP_MSMF", None), cv2.CAP_ANY]
+        elif system == "linux":
+            raw = [getattr(cv2, "CAP_V4L2", None), getattr(cv2, "CAP_GSTREAMER", None), cv2.CAP_ANY]
+        elif system == "darwin":
+            raw = [getattr(cv2, "CAP_AVFOUNDATION", None), cv2.CAP_ANY]
+        else:
+            raw = [cv2.CAP_ANY]
+
+        seen = set()
+        backends: List[int] = []
+        for item in raw:
+            if item is None:
+                continue
+            if item in seen:
+                continue
+            seen.add(item)
+            backends.append(int(item))
+        return backends or [cv2.CAP_ANY]
 
     def _run(self) -> None:
         while not self._stop.is_set():
