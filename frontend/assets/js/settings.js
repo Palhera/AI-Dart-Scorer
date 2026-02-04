@@ -6,6 +6,7 @@
   if (backLink) {
     backLink.addEventListener("click", (event) => {
       event.preventDefault();
+      // Prefer browser history when possible; fall back to home for direct entry / deep links.
       if (window.history.length > 1) {
         window.history.back();
       } else {
@@ -32,6 +33,7 @@
     const readText = (k, d = "") => localStorage.getItem(k) ?? d;
 
     const apply = (enabled) => {
+      // Keep DOM state and ARIA state in sync for accessibility + predictable styling.
       toggle.checked = enabled;
       toggle.setAttribute("aria-checked", String(enabled));
       folderLine?.setAttribute("aria-disabled", String(!enabled));
@@ -49,6 +51,7 @@
     setFolder(readText(KEYS.folder));
 
     toggle.addEventListener("change", () => {
+      // This flag also drives visibility of the "Data Collection" game mode on the home screen.
       localStorage.setItem(KEYS.show, String(toggle.checked));
       apply(toggle.checked);
     });
@@ -56,6 +59,8 @@
     folderButton?.addEventListener("click", async () => {
       if (!readBool(KEYS.show)) return;
 
+      // If the File System Access API is available, persist a directory handle (best UX).
+      // Fallback: store a user-provided label (name only).
       if (window.showDirectoryPicker) {
         try {
           const h = await window.showDirectoryPicker();
@@ -93,6 +98,7 @@
   };
 
   const setStream = (img, camId) => {
+    // Cache-bust the MJPEG URL to force the browser to reconnect after errors or actions.
     img.src = `/api/stream/${camId}?t=${Date.now()}`;
   };
 
@@ -105,12 +111,15 @@
 
     img.onload = () => setLiveUI(camId, true);
     img.onerror = () => {
+      // Retry loop for transient camera/backend failures.
       setLiveUI(camId, false);
       setTimeout(() => setStream(img, camId), 1000);
     };
   };
 
   const waitBackendReady = async () => {
+    // Backend "ready" becomes true even if some cameras are missing; per-camera UI still
+    // relies on stream onload/onerror to reflect actual availability.
     while (true) {
       try {
         const r = await fetch("/api/status", { cache: "no-store" });
@@ -136,6 +145,8 @@
   if (!modal || !modalImg || !modalTile) return;
 
   const REF = {
+    // Mirror of backend reference constants; keep in sync with backend/vision/reference.py.
+    // Used only for drawing UI overlays and defining the default manual-warp quad.
     board: 451.0,
     outer: 170.0,
     inner: 15.9,
@@ -161,11 +172,13 @@
     return { size, scale, outer: REF.outer * scale, cx: (w - 1) * 0.5, cy: (h - 1) * 0.5 };
   };
   const refQuad = (w, h) => {
+    // Source quad is defined on the reference circle at fixed angles (matches backend manual-warp source).
     const g = geom(w, h);
     if (g.size <= 0) return null;
     return REF.corners.map((t) => ({ x: g.cx + g.outer * Math.cos(t), y: g.cy + g.outer * Math.sin(t) }));
   };
   const defaultQuad = (w, h) => {
+    // Store quad normalized to [0,1] so it survives canvas resizes without recomputing.
     const q = refQuad(w, h);
     return q ? q.map((p) => ({ x: p.x / w, y: p.y / h })) : null;
   };
@@ -176,6 +189,7 @@
   const quadPx = (w, h) => manualQuad?.map((p) => ({ x: p.x * w, y: p.y * h })) ?? [];
   const mid = (a, b) => ({ x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 });
   const projectToCircle = (p, g) => {
+    // Edge handles are constrained to the reference circle for more intuitive "drag the rim" behavior.
     const dx = p.x - g.cx;
     const dy = p.y - g.cy;
     const len = Math.hypot(dx, dy) || 1;
@@ -186,6 +200,7 @@
       projectToCircle(p, g),
     );
   const clampQuad = () => {
+    // Prevent handle inversion (keeps the quad convex-ish and avoids degenerate transforms).
     if (!manualQuad) return;
     const g = 0.03;
     manualQuad[0].x = clamp(manualQuad[0].x, 0, manualQuad[1].x - g);
@@ -243,6 +258,7 @@
   };
 
   const drawBase = (ctx, w, h) => {
+    // Draw the canonical rings and radial lines in the overlay canvas coordinate space.
     const g = geom(w, h);
     if (g.size <= 0) return;
     ctx.strokeStyle = "rgba(0, 229, 255, 0.92)";
@@ -275,6 +291,7 @@
   };
 
   const ensureRefBuffer = (w, h) => {
+    // Cache the base reference drawing to avoid re-rendering it for every animation frame.
     if (refBufferSize.w === w && refBufferSize.h === h) return;
     refBufferSize = { w, h };
     refBuffer.width = w;
@@ -287,6 +304,8 @@
   };
 
   const drawTri = (ctx, img, s0, s1, s2, d0, d1, d2) => {
+    // Piecewise-affine drawing: approximate a perspective warp by subdividing into triangles.
+    // This is for preview only; the real warp is applied server-side via homography matrices.
     const denom = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
     if (Math.abs(denom) < 1e-6) return;
     const a = (d0.x * (s1.y - s2.y) + d1.x * (s2.y - s0.y) + d2.x * (s0.y - s1.y)) / denom;
@@ -316,6 +335,7 @@
   };
 
   const solve = (A, b) => {
+    // Minimal Gaussian elimination for 8x8 system (homography with h33 fixed to 1).
     const n = b.length;
     const M = A.map((row, i) => [...row, b[i]]);
     for (let i = 0; i < n; i += 1) {
@@ -343,6 +363,7 @@
   };
 
   const homography = (src, dst) => {
+    // Compute H such that dst ~ H * src, with H[2][2] fixed to 1.
     if (src.length !== 4 || dst.length !== 4) return null;
     const A = [];
     const b = [];
@@ -371,6 +392,8 @@
   };
 
   const drawWarped = (ctx, w, h, srcQ, dstQ) => {
+    // Preview the effect of the current manual quad by warping the reference overlay
+    // into the user's quad. This provides immediate feedback while dragging.
     ensureRefBuffer(w, h);
     const H = homography(srcQ, dstQ);
     if (!H) return drawBase(ctx, w, h);
@@ -399,6 +422,7 @@
   };
 
   const scheduleDraw = () => {
+    // Coalesce multiple updates (drag/move/resize) into a single animation frame.
     if (!referenceOverlay || overlayDrawPending) return;
     overlayDrawPending = true;
     requestAnimationFrame(() => {
@@ -434,6 +458,7 @@
     const e = edgeHandles(q, g);
     const { edge, corner } = handleSizes(g.size);
 
+    // While dragging, show the warped overlay preview; otherwise show the static reference overlay.
     if (drag.active || manualApplyPending) {
       const srcQ = refQuad(wd, hd);
       if (srcQ) drawWarped(ctx, wd, hd, srcQ, q);
@@ -462,6 +487,8 @@
     });
 
   const applyManualWarp = async () => {
+    // Persist the manual correction by posting normalized quad points to the backend.
+    // Backend composes this correction with the existing homography and saves it on disk.
     if (!currentCam || !manualQuad || manualApplyPending) return;
     manualApplyPending = true;
     try {
@@ -530,6 +557,7 @@
   };
 
   document.addEventListener("click", async (e) => {
+    // Single delegated handler keeps wiring simple even if DOM is re-rendered.
     const openBtn = e.target.closest("[data-open-calibration]");
     if (openBtn) return openModal(openBtn.dataset.openCalibration);
     if (e.target.closest("[data-close-modal]")) return closeModal();
@@ -545,6 +573,7 @@
           else manualQuad = null;
           scheduleDraw();
         }
+        // Reconnect streams after calibration changes to pick up latest view immediately.
         modalImg.src = `/api/stream/${currentCam}?t=${Date.now()}`;
         document.getElementById(currentCam)?.setAttribute("src", `/api/stream/${currentCam}?t=${Date.now()}`);
       } finally {
@@ -605,6 +634,7 @@
       drag.last = null;
       drag.changed = false;
       setCursor(null);
+      // Apply on pointer release to avoid spamming the backend while dragging.
       if (changed) void applyManualWarp();
       event.preventDefault();
     };
@@ -626,6 +656,7 @@
       if (modal.classList.contains("is-open")) scheduleDraw();
     });
   }
+
   // =============================
   // TEMP DEBUG: Homography upload (REMOVE BEFORE RELEASE)
   // =============================

@@ -23,10 +23,15 @@ ECC_MAX_ITERS = 80
 ECC_EPS = 1e-6
 ECC_GAUSS_SIZE = 5
 
+# Cache reference edges + mask per output size to avoid recomputing them for every frame.
 _ECC_CACHE: Dict[int, EccCache] = {}
 
 
 def _select_warp_interpolation(img_bgr: np.ndarray, output_size: int) -> int:
+    # Choose interpolation based on scale direction:
+    # - downscale: AREA (anti-aliasing)
+    # - upscale: LANCZOS (sharper)
+    # - same: LINEAR (fast)
     h, w = img_bgr.shape[:2]
     target = min(h, w)
     if output_size < target:
@@ -37,6 +42,7 @@ def _select_warp_interpolation(img_bgr: np.ndarray, output_size: int) -> int:
 
 
 def _build_ecc_mask(output_size: int) -> np.ndarray:
+    # Restrict ECC alignment to the board area (circle) to avoid background influencing the fit.
     mask = np.zeros((output_size, output_size), dtype=np.uint8)
     center = (int(round((output_size - 1) * 0.5)), int(round((output_size - 1) * 0.5)))
     radius_mm = REFERENCE_LINE_OUTER_MM + ECC_MASK_MARGIN_MM
@@ -47,6 +53,7 @@ def _build_ecc_mask(output_size: int) -> np.ndarray:
 
 
 def _prepare_ecc_image(img_bgr: np.ndarray) -> np.ndarray:
+    # ECC works best on edge-like content; normalize to float32 in [0, 1].
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, ECC_CANNY_LOW, ECC_CANNY_HIGH)
     edges = cv2.GaussianBlur(edges, (3, 3), 0)
@@ -58,6 +65,7 @@ def _get_reference_ecc(output_size: int) -> Optional[EccCache]:
     if cached is not None:
         return cached
 
+    # Reference image is a canonical board rendering used as ECC target.
     ref_path = os.path.join(os.path.dirname(__file__), "reference.png")
     ref = cv2.imread(ref_path, cv2.IMREAD_COLOR)
     if ref is None:
@@ -73,6 +81,8 @@ def _get_reference_ecc(output_size: int) -> Optional[EccCache]:
 
 
 def _refine_with_ecc(warped_bgr: np.ndarray, output_size: int) -> Tuple[np.ndarray, np.ndarray]:
+    # Second-stage alignment: refine the initial homography by maximizing edge correlation
+    # against a fixed reference (ECC). Returns the refined image and the *forward* correction.
     ecc_ref = _get_reference_ecc(output_size)
     if ecc_ref is None:
         return warped_bgr, np.eye(3, dtype=np.float64)
@@ -104,6 +114,8 @@ def _refine_with_ecc(warped_bgr: np.ndarray, output_size: int) -> Tuple[np.ndarr
         | cv2.WARP_INVERSE_MAP,
     )
     try:
+        # findTransformECC returns a warp that maps moving->reference in practice; we store
+        # the forward matrix so callers can compose it with the initial homography.
         ecc_forward = np.linalg.inv(warp_matrix.astype(np.float64))
     except np.linalg.LinAlgError:
         ecc_forward = np.eye(3, dtype=np.float64)
@@ -116,6 +128,8 @@ def warp_to_reference_with_matrix(
     center: np.ndarray,
     output_size: int = REFERENCE_OUTPUT_SIZE,
 ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    # Main entrypoint: estimate homography from detected lines, warp to reference space,
+    # then optionally refine with ECC. Returns (warped_image, composed_homography).
     homography = compute_homography(lines_with_points, center, output_size=output_size)
     if homography is None:
         return None
@@ -132,10 +146,12 @@ def warp_to_reference_with_matrix(
 
 
 def _angle_diff(a: float, b: float) -> float:
+    # Minimal angular distance for line directions, considering symmetry modulo pi.
     return abs(((a - b + math.pi / 2.0) % math.pi) - (math.pi / 2.0))
 
 
 def _best_offset(lines: Sequence[dict]) -> float:
+    # Estimate a global angle offset aligning detected line directions with the canonical set.
     offsets: List[float] = []
     for line in lines:
         phi = float(line["phi"])
@@ -153,6 +169,7 @@ def _best_offset(lines: Sequence[dict]) -> float:
             phi = float(line["phi"])
             accuracy = float(line.get("accuracy", 1.0))
             diffs = [_angle_diff(phi, angle + offset) for angle in CANONICAL_ANGLES]
+            # Weight more reliable lines higher; encourages stable solutions when lines are noisy.
             score += accuracy * min(diffs) ** 2
         if score < best_score:
             best_score = score
@@ -161,6 +178,7 @@ def _best_offset(lines: Sequence[dict]) -> float:
 
 
 def _assign_canonical_indices(lines: Sequence[dict]) -> List[int]:
+    # For each detected line, pick the nearest canonical direction after applying best offset.
     offset = _best_offset(lines)
     indices: List[int] = []
     for line in lines:
@@ -175,6 +193,8 @@ def _build_correspondences(
     center: np.ndarray,
     output_size: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
+    # Build point correspondences by mapping each line's two ellipse intersections to the two
+    # opposite points on the reference circle at the matching canonical angle.
     indices = _assign_canonical_indices(lines_with_points)
     radius = REFERENCE_LINE_OUTER_MM * output_size / BOARD_DIAMETER_MM
     center_dst = (output_size * 0.5, output_size * 0.5)
@@ -185,6 +205,8 @@ def _build_correspondences(
         pts = line["points"]
         phi = float(line["phi"])
         d = np.array([math.cos(phi), math.sin(phi)], dtype=np.float64)
+
+        # Choose a consistent ordering (plus/minus) based on direction relative to center.
         dots = [float(np.dot(np.array(p, dtype=np.float64) - center, d)) for p in pts]
         plus_idx = int(np.argmax(dots))
         minus_idx = 1 - plus_idx
@@ -201,6 +223,7 @@ def _build_correspondences(
             center_dst[1] + radius * math.sin(angle + math.pi),
         )
 
+        # Repeat constraints to bias RANSAC toward higher-confidence lines.
         repeats = 1 + int(round(float(line.get("accuracy", 1.0)) * 2.0))
         for _ in range(repeats):
             src_pts.append(plus)
@@ -225,6 +248,7 @@ def compute_homography(
     if len(src) < 4:
         return None
 
+    # RANSAC is used to tolerate spurious lines / bad intersections.
     homography, _ = cv2.findHomography(src, dst, method=cv2.RANSAC, ransacReprojThreshold=4.0)
     return homography
 

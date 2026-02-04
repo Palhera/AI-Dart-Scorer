@@ -3,6 +3,7 @@ import math
 import cv2
 import numpy as np
 
+# Physical dartboard dimensions (mm). These define the canonical geometry used for calibration/warping.
 BOARD_DIAMETER_MM = 451.0
 DOUBLE_RING_RADIUS_MM = 170.0
 DOUBLE_RING_INNER_MM = 162.0
@@ -23,13 +24,21 @@ REFERENCE_LINE_INNER_MM = BULL_OUTER_RADIUS_MM
 REFERENCE_LINE_OUTER_MM = DOUBLE_RING_RADIUS_MM
 REFERENCE_COLOR = (255, 0, 0)
 REFERENCE_THICKNESS = 1
+
+# Rotation compensates for how the "canonical" sector directions are defined vs. how the reference art is oriented.
 REFERENCE_ROTATION_DEG = 9.0
 REFERENCE_ROTATION_RAD = -math.radians(REFERENCE_ROTATION_DEG)
+
+# Canonical reference image size used across the pipeline (warp, ECC, overlays).
 REFERENCE_OUTPUT_SIZE = 720
+
+# Ten unique line directions modulo pi (each direction covers a pair of opposite radial lines).
 CANONICAL_ANGLES = [i * math.pi / 10.0 for i in range(10)]
 
 
 def draw_reference_overlay(img_bgr: np.ndarray) -> np.ndarray:
+    # Draws the canonical board geometry in the *current image coordinates*.
+    # Used for visual debugging after warping into reference space.
     overlay = img_bgr.copy()
     h, w = overlay.shape[:2]
     size = float(min(h, w) - 1)
@@ -52,6 +61,7 @@ def draw_reference_overlay(img_bgr: np.ndarray) -> np.ndarray:
         dx = math.cos(angle_rot)
         dy = math.sin(angle_rot)
 
+        # Draw both directions (angle and angle+pi) explicitly so the overlay shows full diameters.
         x0 = int(round(center_f[0] + dx * inner_radius_px))
         y0 = int(round(center_f[1] + dy * inner_radius_px))
         x1 = int(round(center_f[0] + dx * outer_radius_px))

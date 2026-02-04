@@ -8,6 +8,8 @@ let timer = null;
 
 /* ----- Startup Polling ----- */
 async function startupPoll() {
+  // The backend exposes /api/status (FastAPI app.state.ready) so the UI can wait
+  // for camera initialization before showing interactive screens.
   if (!hasStartupUI) return;
   try {
     const r = await fetch("/api/status", { cache: "no-store" });
@@ -20,12 +22,15 @@ async function startupPoll() {
     footer.hidden = !ready;
 
     if (ready) {
+      // Some layout measurements are only correct once the main UI is visible.
       if (typeof refreshGameModeHeights === "function") {
         window.requestAnimationFrame(refreshGameModeHeights);
       }
       if (timer) clearInterval(timer);
     }
   } catch {
+    // Conservative fallback: if the backend is unreachable or errors,
+    // keep the user on the startup/loading screen.
     startup.hidden = false;
     main.hidden = true;
     footer.hidden = true;
@@ -34,6 +39,7 @@ async function startupPoll() {
 
 if (hasStartupUI) {
   startupPoll();
+  // Polling is simple and robust here; avoids needing SSE/WebSocket for readiness state.
   timer = setInterval(startupPoll, 500);
 }
 
@@ -42,6 +48,7 @@ const applyDataCollectionVisibility = () => {
   const option = document.getElementById("game-mode-data-collection");
   if (!option) return;
 
+  // Feature flag stored in localStorage to hide "Data Collection" from normal users.
   const key = "aiDartScorer.settings.showDataCollection";
   const show = localStorage.getItem(key) === "true";
 
@@ -53,6 +60,7 @@ const applyDataCollectionVisibility = () => {
 applyDataCollectionVisibility();
 
 window.addEventListener("pageshow", () => {
+  // pageshow fires on BFCache restores; re-apply flags and recompute layout.
   applyDataCollectionVisibility();
   if (typeof refreshGameModeHeights === "function") {
     window.requestAnimationFrame(refreshGameModeHeights);
@@ -60,6 +68,7 @@ window.addEventListener("pageshow", () => {
 });
 
 window.addEventListener("storage", (event) => {
+  // Sync feature-flag changes across tabs/windows.
   if (event.key === "aiDartScorer.settings.showDataCollection") {
     applyDataCollectionVisibility();
     if (typeof refreshGameModeHeights === "function") {
@@ -80,6 +89,8 @@ window.addEventListener("storage", (event) => {
     .filter(Boolean);
 
   const updateConfigHeights = () => {
+    // Precompute expanded heights and store them in CSS variables so the UI can animate
+    // open/close transitions without causing repeated layout thrash.
     for (const config of configs) {
       const styles = window.getComputedStyle(config);
       const borderTop = parseFloat(styles.borderTopWidth) || 0;
@@ -145,6 +156,8 @@ window.addEventListener("storage", (event) => {
   const updateFrameTo = (option) => {
     if (!option) return;
 
+    // Move/resize the visual "selection frame" using CSS variables.
+    // Using variables keeps the animation in CSS and reduces JS-driven layout.
     const cRect = container.getBoundingClientRect();
     const oRect = option.getBoundingClientRect();
 
@@ -205,6 +218,7 @@ window.addEventListener("storage", (event) => {
   const isDisabled = (option) => option?.getAttribute("aria-disabled") === "true";
 
   const getSelectedModeOption = () => {
+    // Selection rules: prefer explicitly selected & enabled; otherwise first enabled option.
     const options = Array.from(document.querySelectorAll(".game-mode-option"));
     if (options.length === 0) return null;
 
@@ -229,6 +243,7 @@ window.addEventListener("storage", (event) => {
   };
 
   const updateStartLink = () => {
+    // Build navigation target at click time so the URL always matches current UI state.
     const modeOption = getSelectedModeOption();
     if (!modeOption) return;
 
@@ -237,6 +252,7 @@ window.addEventListener("storage", (event) => {
     const checkIn = getCheckedValue(modeOption, "checkin-");
     const players = getSelectedPlayers();
 
+    // Some modes map to dedicated routes; others reuse /game with query params.
     const modeRoutes = {
       "Data Collection": "/game/data-collection",
     };

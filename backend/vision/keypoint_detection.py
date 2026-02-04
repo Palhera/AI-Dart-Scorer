@@ -13,6 +13,8 @@ Ellipse = Tuple[Tuple[float, float], Tuple[float, float], float]
 
 
 def _line_ellipse_intersections(rho: float, theta: float, ellipse: Ellipse) -> List[PointF]:
+    # Compute intersections between a Hough line (rho, theta) and a rotated ellipse.
+    # Used to convert detected "board lines" into concrete point constraints on the board boundary.
     (cx, cy), (major, minor), angle_deg = ellipse
     a = float(major) * 0.5
     b = float(minor) * 0.5
@@ -24,6 +26,8 @@ def _line_ellipse_intersections(rho: float, theta: float, ellipse: Ellipse) -> L
     p0 = np.array([ct * rho, st * rho], dtype=np.float64)
     d = np.array([-st, ct], dtype=np.float64)
 
+    # Transform into ellipse-aligned coordinates, solve intersection with unit ellipse,
+    # then transform back to image coordinates.
     phi = math.radians(angle_deg)
     cphi = math.cos(phi)
     sphi = math.sin(phi)
@@ -62,6 +66,8 @@ def _line_ellipse_intersections(rho: float, theta: float, ellipse: Ellipse) -> L
 
 
 def _collect_line_intersections(lines: Sequence[dict], ellipse: Ellipse) -> List[dict]:
+    # Enrich each detected line with its two boundary intersection points on the outer ellipse.
+    # The downstream homography solver expects line constraints expressed via points.
     lines_with_points: List[dict] = []
     for line in lines:
         rho = float(line["rho"])
@@ -69,6 +75,7 @@ def _collect_line_intersections(lines: Sequence[dict], ellipse: Ellipse) -> List
         pts = _line_ellipse_intersections(rho, theta, ellipse)
         if len(pts) < 2:
             continue
+        # "phi" is the line direction angle (normal theta rotated by 90°), normalized to [0, pi).
         phi = (theta + math.pi / 2.0) % math.pi
         lines_with_points.append(
             {
@@ -83,6 +90,11 @@ def _collect_line_intersections(lines: Sequence[dict], ellipse: Ellipse) -> List
 
 
 def _compute_warp_result(img_bgr: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    # Core pipeline:
+    # 1) detect white board lines
+    # 2) detect outer board ellipse from red/green regions
+    # 3) convert lines to intersection constraints with ellipse
+    # 4) estimate warp into a canonical "reference" view + return the homography
     if img_bgr is None:
         return None
 
@@ -101,6 +113,9 @@ def _compute_warp_result(img_bgr: np.ndarray) -> Optional[Tuple[np.ndarray, np.n
     (cx, cy), _axes, _angle = ellipse
     center = np.array([cx, cy], dtype=np.float64)
 
+    # Output size is capped to keep computation predictable while staying within the
+    # input image bounds. This also implicitly defines the coordinate system used
+    # by the returned homography matrix.
     output_size = min(
         int(img_bgr.shape[0]),
         int(img_bgr.shape[1]),
@@ -115,6 +130,7 @@ def _compute_warp_result(img_bgr: np.ndarray) -> Optional[Tuple[np.ndarray, np.n
 
 
 def compute_homography_matrix(img_bgr: np.ndarray) -> Optional[np.ndarray]:
+    # Public API for calibration: return only the estimated homography (if available).
     result = _compute_warp_result(img_bgr)
     if result is None:
         return None
@@ -123,6 +139,7 @@ def compute_homography_matrix(img_bgr: np.ndarray) -> Optional[np.ndarray]:
 
 
 def compute_keypoints(img_bgr: np.ndarray) -> Optional[Tuple[np.ndarray, Optional[np.ndarray]]]:
+    # Public API for UI/debug: return an annotated "reference view" image plus the homography.
     if img_bgr is None:
         return None
 

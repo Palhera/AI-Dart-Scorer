@@ -19,7 +19,9 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 router = APIRouter()
 ROTATE_STEP_DEG = 18.0
 
+
 def _process_keypoints_image(image: np.ndarray) -> Tuple[dict, Optional[np.ndarray]]:
+    # Computes the overlay image for UI/debug and returns an API-friendly payload.
     result = compute_keypoints(image)
     if result is None:
         raise HTTPException(status_code=500, detail="No result generated")
@@ -35,25 +37,33 @@ def _process_keypoints_image(image: np.ndarray) -> Tuple[dict, Optional[np.ndarr
     )
     return payload, total_matrix
 
+
 def _process_keypoints_bytes(data: bytes) -> Tuple[dict, Optional[np.ndarray], np.ndarray]:
+    # Helper for upload/debug routes: decode bytes -> run keypoint pipeline.
     image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(status_code=400, detail="Invalid image")
     payload, total_matrix = _process_keypoints_image(image)
     return payload, total_matrix, image
 
+
 @router.get("/api/status")
 def status(request: Request):
+    # "ready" is controlled by the lifespan startup sequence (cameras init).
     return {"ready": bool(getattr(request.app.state, "ready", False))}
+
 
 @router.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
 @router.get("/api/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
 def chrome_devtools_manifest():
+    # Some Chrome tooling probes for this path; returning {} avoids noisy 404s in dev.
     return JSONResponse({})
+
 
 @router.get("/game", include_in_schema=False)
 def game():
     return FileResponse(FRONTEND_DIR / "game.html", media_type="text/html")
+
 
 @router.get("/game/data-collection", include_in_schema=False)
 def game_data_collection():
@@ -61,6 +71,7 @@ def game_data_collection():
         FRONTEND_DIR / "game-modes" / "data-collection.html",
         media_type="text/html",
     )
+
 
 @router.get("/settings", include_in_schema=False)
 def settings():
@@ -72,6 +83,7 @@ def settings():
 # -----------------------------
 BOUNDARY = "frame"
 
+
 @router.get("/api/stream/{cam_id}", include_in_schema=False)
 async def stream_camera(cam_id: str, request: Request):
     mgr = getattr(request.app.state, "camera_manager", None)
@@ -79,11 +91,14 @@ async def stream_camera(cam_id: str, request: Request):
         raise HTTPException(status_code=503, detail="Camera manager not initialized")
 
     async def gen():
+        # MJPEG is implemented as a multipart stream that yields successive JPEG frames.
+        # The camera thread provides "seq" values so we can wait for new frames efficiently.
         last_seq = -1
         while True:
             if await request.is_disconnected():
                 break
 
+            # wait_for_jpeg is blocking (thread/condition-based), so it must run off the event loop.
             jpeg, seq = await asyncio.to_thread(mgr.wait_for_jpeg, cam_id, last_seq, 0.5)
             if jpeg is None or seq == last_seq:
                 await asyncio.sleep(0.005)
@@ -100,6 +115,7 @@ async def stream_camera(cam_id: str, request: Request):
         gen(),
         media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
         headers={
+            # Streaming endpoints should not be cached; X-Accel-Buffering disables proxy buffering (e.g. nginx).
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "Pragma": "no-cache",
             "X-Accel-Buffering": "no",
@@ -124,6 +140,7 @@ class ManualWarpPayload(BaseModel):
     cam_id: str
     points: Tuple[ManualWarpPoint, ManualWarpPoint, ManualWarpPoint, ManualWarpPoint]
 
+
 @router.post("/api/camera/action")
 async def camera_action(payload: CamAction, request: Request):
     mgr = getattr(request.app.state, "camera_manager", None)
@@ -137,6 +154,7 @@ async def camera_action(payload: CamAction, request: Request):
         raise HTTPException(status_code=404, detail="Unknown camera")
 
     if action == "rotate_left":
+        # Rotation is applied to the persisted homography (useful when the board is slightly rotated).
         rotated = mgr.rotate_homography(cam_id, -ROTATE_STEP_DEG)
         if rotated is None:
             raise HTTPException(status_code=409, detail="No homography available to rotate")
@@ -149,6 +167,7 @@ async def camera_action(payload: CamAction, request: Request):
         return {"ok": True}
 
     if action == "calibrate":
+        # Captures a prepared frame (undistorted/cropped/resized) to keep calibration consistent.
         print(f"Calibrating camera {cam_id}")
         frame = await asyncio.to_thread(mgr.capture_prepared_frame, cam_id, 1.0)
         if frame is None:
@@ -185,6 +204,8 @@ async def camera_manual_warp(payload: ManualWarpPayload, request: Request):
     if size <= 0:
         raise HTTPException(status_code=400, detail="Invalid frame size")
 
+    # Build a "canonical" set of source points on the reference circle in image space,
+    # then map them to user-specified destination points to define a manual correction warp.
     scale = float(size) / float(BOARD_DIAMETER_MM)
     outer_px = float(REFERENCE_LINE_OUTER_MM) * scale
     cx = (float(width) - 1.0) * 0.5
@@ -199,6 +220,7 @@ async def camera_manual_warp(payload: ManualWarpPayload, request: Request):
         dtype=np.float32,
     )
 
+    # UI provides points normalized to [0,1]; convert to pixel coordinates.
     dst = np.array(
         [
             [float(pt.x) * float(width), float(pt.y) * float(height)]
@@ -213,6 +235,7 @@ async def camera_manual_warp(payload: ManualWarpPayload, request: Request):
         raise HTTPException(status_code=400, detail="Invalid adjustment") from exc
 
     try:
+        # We store the correction in forward direction consistent with the runtime warp application.
         correction = np.linalg.inv(user_warp.astype(np.float64))
     except np.linalg.LinAlgError as exc:
         raise HTTPException(status_code=400, detail="Invalid adjustment (non-invertible)") from exc
@@ -237,6 +260,7 @@ async def camera_manual_warp(payload: ManualWarpPayload, request: Request):
 # -----------------------------
 @router.post("/keypoints", include_in_schema=False)
 async def keypoints_debug(file: UploadFile = File(...)):
+    # Debug-only: allows running the vision pipeline on arbitrary uploads.
     data = await file.read()
     payload, _, _ = _process_keypoints_bytes(data)
     return payload
