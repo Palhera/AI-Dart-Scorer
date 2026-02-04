@@ -25,4 +25,8 @@ async def lifespan(app: FastAPI):
         print("Shutting down...")
         app.state.ready = False
 
+        mgr = getattr(app.state, "camera_manager", None)
+        if mgr:
+            mgr.close_all()
+
         print("Backend stopped")

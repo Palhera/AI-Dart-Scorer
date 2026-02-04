@@ -18,6 +18,8 @@
   let folderMissing = true;
 
   const previewUrls = new Map();
+  const previewSeq = new Map();
+  const previewReady = new Set();
 
   const setStatus = (message, state = "info") => {
     // statusEl.dataset.state is used for styling (ok/info/busy/error).
@@ -73,23 +75,43 @@
     return res.blob();
   };
 
-  const setPreviewBlob = (camId, blob) => {
-    const img = document.getElementById(`dc-${camId}`);
-    if (!img) return;
-    const prev = previewUrls.get(camId);
-    if (prev) URL.revokeObjectURL(prev);
-    const url = URL.createObjectURL(blob);
-    previewUrls.set(camId, url);
-    img.onload = () => setLiveUI(camId, true);
-    img.onerror = () => setLiveUI(camId, false);
-    img.src = url;
-  };
+  const setPreviewBlob = (camId, blob) =>
+    new Promise((resolve) => {
+      const img = document.getElementById(`dc-${camId}`);
+      if (!img) return resolve(false);
+
+      const seq = (previewSeq.get(camId) || 0) + 1;
+      previewSeq.set(camId, seq);
+
+      const url = URL.createObjectURL(blob);
+      const probe = new Image();
+      probe.onload = () => {
+        if (previewSeq.get(camId) !== seq) {
+          URL.revokeObjectURL(url);
+          return resolve(false);
+        }
+        const prev = previewUrls.get(camId);
+        previewUrls.set(camId, url);
+        img.src = url;
+        if (prev) URL.revokeObjectURL(prev);
+        previewReady.add(camId);
+        setLiveUI(camId, true);
+        resolve(true);
+      };
+      probe.onerror = () => {
+        if (previewSeq.get(camId) === seq && !previewReady.has(camId)) {
+          setLiveUI(camId, false);
+        }
+        URL.revokeObjectURL(url);
+        resolve(false);
+      };
+      probe.src = url;
+    });
 
   const loadPreviewSnapshot = async (camId) => {
-    setLiveUI(camId, false);
+    if (!previewReady.has(camId)) setLiveUI(camId, false);
     const blob = await fetchSnapshotBlob(camId, "jpg");
-    setPreviewBlob(camId, blob);
-    return true;
+    return setPreviewBlob(camId, blob);
   };
 
   const loadAllPreviews = async () => {
@@ -255,7 +277,7 @@
 
       for (const { camId, blob } of snapshots) {
         await writeBlob(handle, `${filePrefix}_${camId}.png`, blob);
-        setPreviewBlob(camId, blob);
+        await setPreviewBlob(camId, blob);
       }
 
       camerasReady = true;

@@ -86,6 +86,9 @@
   // Cameras (snapshots)
   // =============================
   const CAMS = ["cam1", "cam2", "cam3"];
+  const snapshotUrls = new Map();
+  const snapshotSeq = new Map();
+  const tileReady = new Set();
 
   const setLiveUI = (camId, live) => {
     document
@@ -100,23 +103,74 @@
   const snapshotUrl = (camId, format = "jpg") =>
     `/api/camera/snapshot/${camId}?format=${format}&t=${Date.now()}`;
 
-  const loadSnapshot = (camId, img, onReady) =>
-    new Promise((resolve) => {
-      if (!img) return resolve(false);
-      onReady?.(false);
-      img.onload = () => {
-        onReady?.(true);
+  const fetchSnapshotBlob = async (camId, format = "jpg") => {
+    const res = await fetch(snapshotUrl(camId, format), { cache: "no-store" });
+    if (!res.ok) {
+      let detail = `Snapshot failed (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err?.detail) detail = err.detail;
+      } catch {}
+      throw new Error(detail);
+    }
+    return res.blob();
+  };
+
+  const swapImage = (key, img, url, onReady) => {
+    const prev = snapshotUrls.get(key);
+    snapshotUrls.set(key, url);
+    img.src = url;
+    if (prev) URL.revokeObjectURL(prev);
+    onReady?.(true);
+  };
+
+  const loadSnapshot = async (camId, img, onReady, options = {}) => {
+    const { key = camId, keepLive = false } = options;
+    if (!img) return false;
+
+    const seq = (snapshotSeq.get(key) || 0) + 1;
+    snapshotSeq.set(key, seq);
+
+    if (!keepLive) onReady?.(false);
+
+    let blob;
+    try {
+      blob = await fetchSnapshotBlob(camId, "jpg");
+    } catch {
+      if (!keepLive) onReady?.(false);
+      return false;
+    }
+
+    const url = URL.createObjectURL(blob);
+    return new Promise((resolve) => {
+      const probe = new Image();
+      probe.onload = () => {
+        if (snapshotSeq.get(key) !== seq) {
+          URL.revokeObjectURL(url);
+          return resolve(false);
+        }
+        swapImage(key, img, url, onReady);
         resolve(true);
       };
-      img.onerror = () => {
-        onReady?.(false);
+      probe.onerror = () => {
+        if (snapshotSeq.get(key) === seq && !keepLive) onReady?.(false);
+        URL.revokeObjectURL(url);
         resolve(false);
       };
-      img.src = snapshotUrl(camId);
+      probe.src = url;
     });
+  };
 
   const loadTileSnapshot = (camId) =>
-    loadSnapshot(camId, document.getElementById(camId), (ready) => setLiveUI(camId, ready));
+    loadSnapshot(
+      camId,
+      document.getElementById(camId),
+      (ready) => {
+        if (ready) tileReady.add(camId);
+        setLiveUI(camId, ready || tileReady.has(camId));
+      },
+      { keepLive: tileReady.has(camId), key: `tile:${camId}` },
+    );
 
   const waitBackendReady = async () => {
     // Backend "ready" becomes true even if some cameras are missing; per-camera UI still
@@ -146,9 +200,18 @@
   if (!modal || !modalImg || !modalTile) return;
 
   const setModalLive = (live) => modalTile.classList.toggle("is-live", live);
+  let modalReady = false;
 
   const loadModalSnapshot = (camId) =>
-    loadSnapshot(camId, modalImg, (ready) => setModalLive(ready));
+    loadSnapshot(
+      camId,
+      modalImg,
+      (ready) => {
+        if (ready) modalReady = true;
+        setModalLive(ready || modalReady);
+      },
+      { keepLive: modalReady, key: `modal:${camId}` },
+    );
 
   const refreshSnapshots = async (camId, options = {}) => {
     const { includeModal = true } = options;
@@ -545,6 +608,7 @@
     currentCam = camId;
     modalLabel.textContent = camId.toUpperCase();
     modalTitle.textContent = `Calibration - ${camId.toUpperCase()}`;
+    modalReady = false;
     setModalLive(false);
     loadModalSnapshot(camId);
     const rect = modalTile.getBoundingClientRect();
@@ -557,12 +621,22 @@
   };
 
   const closeModal = () => {
+    const closingCam = currentCam;
     currentCam = null;
     modal.classList.remove("is-open");
     modal.setAttribute("aria-hidden", "true");
     document.body.style.overflow = "";
     modalImg.removeAttribute("src");
     modalTile.classList.remove("is-live");
+    modalReady = false;
+    if (closingCam) {
+      const key = `modal:${closingCam}`;
+      const prev = snapshotUrls.get(key);
+      if (prev) {
+        URL.revokeObjectURL(prev);
+        snapshotUrls.delete(key);
+      }
+    }
     manualQuad = null;
     drag.active = null;
     drag.pointerId = null;

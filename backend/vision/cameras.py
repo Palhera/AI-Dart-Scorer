@@ -37,6 +37,7 @@ class CameraRunner:
         # It is applied consistently in _prepare_frame() and snapshot encoding.
         self._calibration = CalibrationRuntime(cam_id, cfg.width, cfg.height)
         self._lock = threading.Lock()
+        self._cap: Optional[cv2.VideoCapture] = None
 
     def capture_prepared_frame(self, timeout: float = 1.0) -> Optional[np.ndarray]:
         # Returns undistorted/cropped/resized frame for calibration routines.
@@ -110,20 +111,25 @@ class CameraRunner:
         return frame
 
     def _capture_raw_frame(self, timeout: float = 1.0) -> Optional[np.ndarray]:
-        # Open the camera, grab a single frame, then release immediately.
+        # Keep the capture open between requests to minimize latency.
         with self._lock:
-            try:
-                cap = self._open_capture()
-            except Exception:
-                return None
-
-            try:
-                return self._read_frame(cap, timeout=timeout)
-            finally:
+            for _ in range(2):
                 try:
-                    cap.release()
+                    cap = self._ensure_capture()
                 except Exception:
-                    pass
+                    return None
+
+                frame = self._read_frame(cap, timeout=timeout)
+                if frame is not None:
+                    return frame
+
+                # Reset capture on failure and retry once.
+                self._release_capture()
+            return None
+
+    def close(self) -> None:
+        with self._lock:
+            self._release_capture()
 
     def _read_frame(self, cap: cv2.VideoCapture, timeout: float = 1.0) -> Optional[np.ndarray]:
         deadline = time.monotonic() + max(float(timeout), 0.0)
@@ -142,6 +148,21 @@ class CameraRunner:
             return frame
 
         return last_frame
+
+    def _ensure_capture(self) -> cv2.VideoCapture:
+        if self._cap is not None and self._cap.isOpened():
+            return self._cap
+        self._cap = self._open_capture()
+        return self._cap
+
+    def _release_capture(self) -> None:
+        if self._cap is None:
+            return
+        try:
+            self._cap.release()
+        except Exception:
+            pass
+        self._cap = None
 
     def _open_capture(self) -> cv2.VideoCapture:
         # Try platform-specific backends in order; camera indices/backends can vary widely
@@ -213,6 +234,10 @@ class CameraManager:
             cam_id: CameraRunner(cam_id, cfg)
             for cam_id, cfg in configs.items()
         }
+
+    def close_all(self) -> None:
+        for cam in self.cams.values():
+            cam.close()
 
     def capture_snapshot(self, cam_id: str, fmt: str = "jpg", timeout: float = 1.0) -> Optional[bytes]:
         cam = self.cams.get(cam_id)
