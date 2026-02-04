@@ -5,7 +5,7 @@ This guide explains how the system starts, how data flows through it, and where 
 ## Purpose
 The project is a local FastAPI app that:
 - Serves a web UI.
-- Streams MJPEG camera feeds.
+- Captures per-request camera snapshots (no live stream).
 - Calibrates each camera to a canonical dartboard reference.
 - Provides a data collection mode that saves aligned frames for training.
 
@@ -16,7 +16,7 @@ backend/
   api.py                  API routes and camera actions.
   core/lifespan.py         Startup/shutdown and camera init.
   vision/
-    cameras.py             Camera threads + frame preparation.
+    cameras.py             On-demand snapshot capture + frame preparation.
     calibration_store.py   Calibration JSON I/O and runtime cache.
     keypoint_detection.py  High-level calibration pipeline.
     line_detection.py      White line detection (Hough).
@@ -39,7 +39,7 @@ frontend/
 flowchart LR
   Browser -->|HTTP| FastAPI
   FastAPI -->|Static UI| Frontend
-  FastAPI -->|/api/stream/{cam}| CameraManager
+  FastAPI -->|/api/camera/snapshot/{cam}| CameraManager
   FastAPI -->|/api/camera/*| CameraManager
   CameraManager --> CameraRunner
   CameraRunner -->|OpenCV capture| Cameras
@@ -52,7 +52,7 @@ flowchart LR
 ## Where Things Start
 1. `uvicorn backend.main:app` loads `backend/main.py`.
 2. `FastAPI(lifespan=lifespan)` in `backend/main.py` wires the startup/shutdown lifecycle.
-3. The `lifespan` context in `backend/core/lifespan.py` starts the camera manager and waits for cameras to open.
+3. The `lifespan` context in `backend/core/lifespan.py` initializes the camera manager for on-demand snapshots.
 4. The frontend is served from `frontend/` as static files (mounted at `/`).
 
 ## Startup and Readiness Flow
@@ -65,9 +65,7 @@ sequenceDiagram
   participant CameraRunner
 
   FastAPI->>Lifespan: startup
-  Lifespan->>CameraManager: start_all()
-  CameraManager->>CameraRunner: start threads
-  CameraRunner->>CameraRunner: open camera and capture
+  Lifespan->>CameraManager: init configs
   Lifespan-->>FastAPI: app.state.ready = true
   Browser->>FastAPI: GET /api/status (poll)
   FastAPI-->>Browser: {ready: true|false}
@@ -75,7 +73,7 @@ sequenceDiagram
 
 Notes:
 - The UI polls `/api/status` every 500ms. It shows the "Warming up" screen until `ready` is true.
-- The backend sets `ready = true` after the camera init loop, even if some cameras are missing (after timeout).
+- The backend sets `ready = true` once the camera manager is initialized; missing cameras are handled per-request.
 
 ## Backend Entry Points
 **App**: `backend/main.py`
@@ -84,17 +82,17 @@ Notes:
 3. `app.mount("/", StaticFiles(...))` serves the UI.
 
 **Lifecycle**: `backend/core/lifespan.py`
-- `_init_cameras()` creates `CameraManager` with camera indices and capture settings.
-- `CameraManager.start_all()` starts capture threads and a sync clock.
-- `app.state.ready` is toggled based on readiness and shutdown.
+- `lifespan` creates `CameraManager` with camera indices and capture settings.
+- Cameras are opened on-demand per snapshot request (no background threads).
+- `app.state.ready` is toggled on startup/shutdown.
 
 ## Camera Pipeline
-Camera capture and streaming are handled by `backend/vision/cameras.py`.
+Camera capture is handled by `backend/vision/cameras.py` (on-demand snapshots).
 
 Key concepts:
 - `CameraManager` owns multiple `CameraRunner` objects.
-- Each `CameraRunner` runs in a thread, grabs frames from OpenCV, prepares them, and emits JPEGs for MJPEG streaming.
-- A `SyncClock` keeps JPEG streams aligned between cameras (shared tick at `jpeg_fps`).
+- Each `CameraRunner` opens the camera for a single snapshot, prepares the frame, and applies the persisted warp before encoding.
+- There are no background capture threads or MJPEG streams.
 
 **Frame preparation** in `CameraRunner._prepare_frame()`:
 1. Undistort using `CalibrationRuntime` (if calibration is present).
@@ -114,9 +112,8 @@ File: `backend/api.py`
 - `GET /game` returns `frontend/game.html`.
 - `GET /game/data-collection` returns data collection mode.
 
-**Streaming**
-- `GET /api/stream/{cam_id}` returns a multipart MJPEG stream.
-- Uses `CameraManager.wait_for_jpeg()` to block until a new frame is ready.
+**Snapshots**
+- `GET /api/camera/snapshot/{cam_id}?format=jpg|png` returns a single image (JPEG by default).
 
 **Camera actions**
 - `POST /api/camera/action` with payload `{cam_id, action}`. Valid `action` values are `rotate_left`, `rotate_right`, `calibrate`, and `reset`. These rotate the stored homography, run auto calibration, or clear the homography.
@@ -217,10 +214,12 @@ Key files:
 sequenceDiagram
   participant User
   participant Frontend
+  participant API
   participant BrowserFS
 
   User->>Frontend: Capture (Space)
-  Frontend->>Frontend: grab MJPEG <img> -> canvas -> PNG
+  Frontend->>API: GET /api/camera/snapshot/{cam}?format=png (x3)
+  API-->>Frontend: PNG blobs
   Frontend->>BrowserFS: write file to folder
   BrowserFS-->>Frontend: OK
 ```
@@ -234,8 +233,8 @@ Details:
 **Camera indices and capture size**:
 - Edit `backend/core/lifespan.py` where `CameraConfig` is defined.
 
-**Stream framerate and quality**:
-- Update `CameraConfig` in `backend/vision/cameras.py`.
+**Snapshot quality**:
+- Update `CameraConfig.jpeg_quality` in `backend/vision/cameras.py`.
 
 **Vision thresholds**:
 - `backend/vision/line_detection.py`: Canny/Hough parameters.
@@ -252,9 +251,9 @@ Details:
 ## Troubleshooting
 **UI stuck on "Warming up"**
 - Check `/api/status` response.
-- If some cameras are missing, the backend logs a warning after ~50s but still sets ready = true.
+- The backend should set `ready = true` quickly once startup completes.
 
-**Camera preview is black or not live**
+**Camera preview is black or missing**
 - Confirm `CameraConfig.index` values match system camera indices.
 - Check that the camera is not in use by another app.
 

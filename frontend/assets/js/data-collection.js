@@ -17,8 +17,7 @@
   let folderReady = false;
   let folderMissing = true;
 
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
+  const previewUrls = new Map();
 
   const setStatus = (message, state = "info") => {
     // statusEl.dataset.state is used for styling (ok/info/busy/error).
@@ -49,7 +48,7 @@
     // Capture is only allowed when:
     // - not already saving
     // - folder exists and is accessible
-    // - all camera streams are live (so canvas capture has pixels)
+    // - camera snapshots have loaded at least once
     captureBtn.disabled = saving || folderMissing || !camerasReady;
   };
 
@@ -58,35 +57,55 @@
     if (tile) tile.classList.toggle("is-live", live);
   };
 
-  const setStream = (img, camId) => {
-    // Cache-bust to force reconnection and avoid stale frames.
-    img.src = `/api/stream/${camId}?t=${Date.now()}`;
+  const snapshotUrl = (camId, format = "jpg") =>
+    `/api/camera/snapshot/${camId}?format=${format}&t=${Date.now()}`;
+
+  const fetchSnapshotBlob = async (camId, format = "jpg") => {
+    const res = await fetch(snapshotUrl(camId, format), { cache: "no-store" });
+    if (!res.ok) {
+      let detail = `Snapshot failed (${res.status})`;
+      try {
+        const err = await res.json();
+        if (err?.detail) detail = err.detail;
+      } catch {}
+      throw new Error(detail);
+    }
+    return res.blob();
   };
 
-  const attachStream = (camId, liveState, onLive) => {
+  const setPreviewBlob = (camId, blob) => {
     const img = document.getElementById(`dc-${camId}`);
     if (!img) return;
+    const prev = previewUrls.get(camId);
+    if (prev) URL.revokeObjectURL(prev);
+    const url = URL.createObjectURL(blob);
+    previewUrls.set(camId, url);
+    img.onload = () => setLiveUI(camId, true);
+    img.onerror = () => setLiveUI(camId, false);
+    img.src = url;
+  };
 
+  const loadPreviewSnapshot = async (camId) => {
     setLiveUI(camId, false);
-    setStream(img, camId);
+    const blob = await fetchSnapshotBlob(camId, "jpg");
+    setPreviewBlob(camId, blob);
+    return true;
+  };
 
-    img.onload = () => {
-      setLiveUI(camId, true);
-      // Count the first successful load per camera to know when all streams are ready.
-      if (!liveState[camId]) {
-        liveState[camId] = true;
-        onLive();
-      }
-    };
-
-    img.onerror = () => {
-      setLiveUI(camId, false);
-      setTimeout(() => setStream(img, camId), 1000);
-    };
+  const loadAllPreviews = async () => {
+    const results = await Promise.allSettled(CAMS.map(loadPreviewSnapshot));
+    camerasReady = results.every((r) => r.status === "fulfilled");
+    updateCaptureState();
+    if (folderReady) {
+      setStatus(
+        camerasReady ? "Ready to capture." : "Camera snapshots not ready.",
+        camerasReady ? "ok" : "error",
+      );
+    }
   };
 
   const waitBackendReady = async () => {
-    // Wait for backend startup (camera threads initialized) before attaching MJPEG streams.
+    // Wait for backend startup before requesting snapshots.
     while (true) {
       try {
         const r = await fetch("/api/status", { cache: "no-store" });
@@ -192,29 +211,8 @@
     if (camerasReady) {
       setStatus("Ready to capture.", "ok");
     } else {
-      setStatus("Waiting for camera streams...", "info");
+      setStatus("Waiting for camera snapshots...", "info");
     }
-  };
-
-  const grabPngFromImage = async (img) => {
-    // Captures the current <img> contents by drawing to canvas, then encoding PNG.
-    // This is "best effort": it captures what the browser currently has decoded.
-    if (!ctx) throw new Error("Canvas is not available.");
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    if (!w || !h) throw new Error("Camera stream not ready.");
-    canvas.width = w;
-    canvas.height = h;
-    ctx.drawImage(img, 0, 0, w, h);
-    return new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          reject(new Error("Failed to encode PNG."));
-          return;
-        }
-        resolve(blob);
-      }, "image/png");
-    });
   };
 
   const writeBlob = async (handle, fileName, blob) => {
@@ -238,7 +236,7 @@
         if (!folderReady) return;
       }
       if (!camerasReady) {
-        setStatus("Camera streams not ready.", "error");
+        setStatus("Camera snapshots not ready.", "error");
         return;
       }
 
@@ -247,20 +245,29 @@
       const id = nextId;
       const filePrefix = formatId(id);
 
-      // Save 3 synchronized-ish samples (one per camera). Each is a browser-side capture
-      // of the current MJPEG frame, not a backend timestamped snapshot.
-      for (const camId of CAMS) {
-        const img = document.getElementById(`dc-${camId}`);
-        if (!img) throw new Error(`Missing stream for ${camId}.`);
-        const blob = await grabPngFromImage(img);
+      // Save 3 synchronized-ish samples (one per camera) via backend snapshots.
+      const snapshots = await Promise.all(
+        CAMS.map(async (camId) => ({
+          camId,
+          blob: await fetchSnapshotBlob(camId, "png"),
+        })),
+      );
+
+      for (const { camId, blob } of snapshots) {
         await writeBlob(handle, `${filePrefix}_${camId}.png`, blob);
+        setPreviewBlob(camId, blob);
       }
+
+      camerasReady = true;
+      updateCaptureState();
 
       usedIds.add(id);
       nextId = findNextId(usedIds, id + 1);
       setNextId(nextId);
       setStatus(`Saved ${filePrefix} for 3 cameras.`, "ok");
     } catch (err) {
+      camerasReady = false;
+      updateCaptureState();
       setStatus(err?.message || "Failed to save images.", "error");
     } finally {
       saving = false;
@@ -295,18 +302,9 @@
   const folderName = localStorage.getItem(FOLDER_KEY) || "";
   setFolderName(folderName);
 
-  waitBackendReady().then(() => {
-    const liveState = {};
-    let liveCount = 0;
-    const onLive = () => {
-      liveCount += 1;
-      if (liveCount >= CAMS.length) {
-        camerasReady = true;
-        updateCaptureState();
-        if (folderReady) setStatus("Ready to capture.", "ok");
-      }
-    };
-    CAMS.forEach((camId) => attachStream(camId, liveState, onLive));
+  waitBackendReady().then(async () => {
+    if (!folderMissing) setStatus("Loading camera snapshots...", "info");
+    await loadAllPreviews();
   });
 
   scanExistingIds();

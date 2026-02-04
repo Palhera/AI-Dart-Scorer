@@ -1,6 +1,6 @@
 # AI Dart Scorer
 
-Local FastAPI app that serves a web UI, streams dartboard cameras, and detects keypoints for calibration.
+Local FastAPI app that serves a web UI, captures dartboard camera snapshots, and detects keypoints for calibration.
 
 ## Quick start
 ```bash

@@ -9,7 +9,7 @@ let timer = null;
 /* ----- Startup Polling ----- */
 async function startupPoll() {
   // The backend exposes /api/status (FastAPI app.state.ready) so the UI can wait
-  // for camera initialization before showing interactive screens.
+  // for backend readiness before showing interactive screens.
   if (!hasStartupUI) return;
   try {
     const r = await fetch("/api/status", { cache: "no-store" });

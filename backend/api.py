@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import cv2
 import numpy as np
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from backend.vision.keypoint_detection import compute_keypoints
 from backend.vision.calibration_store import load_calibration, update_warp_matrix
@@ -79,46 +79,35 @@ def settings():
 
 
 # -----------------------------
-# Streaming MJPEG
+# Camera snapshots (single frame)
 # -----------------------------
-BOUNDARY = "frame"
-
-
-@router.get("/api/stream/{cam_id}", include_in_schema=False)
-async def stream_camera(cam_id: str, request: Request):
+@router.get("/api/camera/snapshot/{cam_id}", include_in_schema=False)
+async def camera_snapshot(cam_id: str, request: Request, format: str = "jpg"):
     mgr = getattr(request.app.state, "camera_manager", None)
     if mgr is None:
         raise HTTPException(status_code=503, detail="Camera manager not initialized")
 
-    async def gen():
-        # MJPEG is implemented as a multipart stream that yields successive JPEG frames.
-        # The camera thread provides "seq" values so we can wait for new frames efficiently.
-        last_seq = -1
-        while True:
-            if await request.is_disconnected():
-                break
+    if cam_id not in mgr.cams:
+        raise HTTPException(status_code=404, detail="Unknown camera")
 
-            # wait_for_jpeg is blocking (thread/condition-based), so it must run off the event loop.
-            jpeg, seq = await asyncio.to_thread(mgr.wait_for_jpeg, cam_id, last_seq, 0.5)
-            if jpeg is None or seq == last_seq:
-                await asyncio.sleep(0.005)
-                continue
+    fmt = (format or "jpg").lower()
+    if fmt == "jpeg":
+        fmt = "jpg"
+    if fmt not in ("jpg", "png"):
+        raise HTTPException(status_code=400, detail="Invalid format")
 
-            last_seq = seq
-            yield (
-                f"--{BOUNDARY}\r\n"
-                "Content-Type: image/jpeg\r\n"
-                f"Content-Length: {len(jpeg)}\r\n\r\n"
-            ).encode("utf-8") + jpeg + b"\r\n"
+    data = await asyncio.to_thread(mgr.capture_snapshot, cam_id, fmt, 1.5)
+    if data is None:
+        raise HTTPException(status_code=503, detail="Camera frame unavailable")
 
-    return StreamingResponse(
-        gen(),
-        media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
+    media_type = "image/png" if fmt == "png" else "image/jpeg"
+    return Response(
+        content=data,
+        media_type=media_type,
         headers={
-            # Streaming endpoints should not be cached; X-Accel-Buffering disables proxy buffering (e.g. nginx).
+            # Snapshot endpoints should not be cached; allow callers to force refresh.
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "Pragma": "no-cache",
-            "X-Accel-Buffering": "no",
         },
     )
 

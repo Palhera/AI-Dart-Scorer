@@ -83,7 +83,7 @@
   }
 
   // =============================
-  // Cameras (MJPEG backend)
+  // Cameras (snapshots)
   // =============================
   const CAMS = ["cam1", "cam2", "cam3"];
 
@@ -97,29 +97,30 @@
     if (btn) btn.disabled = !live;
   };
 
-  const setStream = (img, camId) => {
-    // Cache-bust the MJPEG URL to force the browser to reconnect after errors or actions.
-    img.src = `/api/stream/${camId}?t=${Date.now()}`;
-  };
+  const snapshotUrl = (camId, format = "jpg") =>
+    `/api/camera/snapshot/${camId}?format=${format}&t=${Date.now()}`;
 
-  const attachStream = (camId) => {
-    const img = document.getElementById(camId);
-    if (!img) return;
+  const loadSnapshot = (camId, img, onReady) =>
+    new Promise((resolve) => {
+      if (!img) return resolve(false);
+      onReady?.(false);
+      img.onload = () => {
+        onReady?.(true);
+        resolve(true);
+      };
+      img.onerror = () => {
+        onReady?.(false);
+        resolve(false);
+      };
+      img.src = snapshotUrl(camId);
+    });
 
-    setLiveUI(camId, false);
-    setStream(img, camId);
-
-    img.onload = () => setLiveUI(camId, true);
-    img.onerror = () => {
-      // Retry loop for transient camera/backend failures.
-      setLiveUI(camId, false);
-      setTimeout(() => setStream(img, camId), 1000);
-    };
-  };
+  const loadTileSnapshot = (camId) =>
+    loadSnapshot(camId, document.getElementById(camId), (ready) => setLiveUI(camId, ready));
 
   const waitBackendReady = async () => {
     // Backend "ready" becomes true even if some cameras are missing; per-camera UI still
-    // relies on stream onload/onerror to reflect actual availability.
+    // relies on snapshot load success to reflect actual availability.
     while (true) {
       try {
         const r = await fetch("/api/status", { cache: "no-store" });
@@ -127,7 +128,7 @@
       } catch {}
       await new Promise((r) => setTimeout(r, 500));
     }
-    CAMS.forEach(attachStream);
+    await Promise.all(CAMS.map(loadTileSnapshot));
   };
 
   waitBackendReady();
@@ -143,6 +144,20 @@
   const referenceOverlay = document.getElementById("modal-reference-overlay");
 
   if (!modal || !modalImg || !modalTile) return;
+
+  const setModalLive = (live) => modalTile.classList.toggle("is-live", live);
+
+  const loadModalSnapshot = (camId) =>
+    loadSnapshot(camId, modalImg, (ready) => setModalLive(ready));
+
+  const refreshSnapshots = async (camId, options = {}) => {
+    const { includeModal = true } = options;
+    const tasks = [loadTileSnapshot(camId)];
+    if (includeModal && modal.classList.contains("is-open") && currentCam === camId) {
+      tasks.push(loadModalSnapshot(camId));
+    }
+    await Promise.all(tasks);
+  };
 
   const REF = {
     // Mirror of backend reference constants; keep in sync with backend/vision/reference.py.
@@ -509,6 +524,7 @@
       const rect = modalTile.getBoundingClientRect();
       resetQuad(rect.width, rect.height);
       scheduleDraw();
+      await refreshSnapshots(currentCam);
     } catch (err) {
       console.warn(err);
     } finally {
@@ -529,10 +545,8 @@
     currentCam = camId;
     modalLabel.textContent = camId.toUpperCase();
     modalTitle.textContent = `Calibration - ${camId.toUpperCase()}`;
-    modalTile.classList.remove("is-live");
-    modalImg.onload = () => modalTile.classList.add("is-live");
-    modalImg.onerror = () => modalTile.classList.remove("is-live");
-    modalImg.src = `/api/stream/${camId}?t=${Date.now()}`;
+    setModalLive(false);
+    loadModalSnapshot(camId);
     const rect = modalTile.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) resetQuad(rect.width, rect.height);
     else manualQuad = null;
@@ -573,9 +587,8 @@
           else manualQuad = null;
           scheduleDraw();
         }
-        // Reconnect streams after calibration changes to pick up latest view immediately.
-        modalImg.src = `/api/stream/${currentCam}?t=${Date.now()}`;
-        document.getElementById(currentCam)?.setAttribute("src", `/api/stream/${currentCam}?t=${Date.now()}`);
+        // Refresh snapshots after any calibration change.
+        await refreshSnapshots(currentCam);
       } finally {
         actionBtn.disabled = false;
       }
