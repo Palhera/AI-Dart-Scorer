@@ -79,27 +79,31 @@ async def stream_camera(cam_id: str, request: Request):
         raise HTTPException(status_code=503, detail="Camera manager not initialized")
 
     async def gen():
+        last_seq = -1
         while True:
             if await request.is_disconnected():
                 break
 
-            jpeg = mgr.get_jpeg(cam_id)
-            if jpeg is None:
-                await asyncio.sleep(0.05)
+            jpeg, seq = await asyncio.to_thread(mgr.wait_for_jpeg, cam_id, last_seq, 0.5)
+            if jpeg is None or seq == last_seq:
+                await asyncio.sleep(0.005)
                 continue
 
+            last_seq = seq
             yield (
                 f"--{BOUNDARY}\r\n"
                 "Content-Type: image/jpeg\r\n"
                 f"Content-Length: {len(jpeg)}\r\n\r\n"
             ).encode("utf-8") + jpeg + b"\r\n"
 
-            await asyncio.sleep(0.03)  # ~30 fps
-
     return StreamingResponse(
         gen(),
         media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
-        headers={"Cache-Control": "no-cache"},
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

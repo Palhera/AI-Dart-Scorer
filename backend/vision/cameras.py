@@ -2,7 +2,7 @@ import platform
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 
 import cv2
 import numpy as np
@@ -22,14 +22,65 @@ class CameraConfig:
     height: int = 720
     fps: int = 30
     jpeg_fps: int = 15
+    jpeg_quality: int = 70
+    buffer_size: int = 1
+
+
+class SyncClock:
+    def __init__(self, fps: float):
+        self._interval = 1.0 / max(float(fps), 1.0)
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock)
+        self._tick = 0
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="SyncClock", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+
+    def get_tick(self) -> int:
+        with self._lock:
+            return self._tick
+
+    def wait_for_tick(self, last_tick: int, timeout: float) -> int:
+        deadline = time.monotonic() + max(float(timeout), 0.0)
+        with self._lock:
+            while True:
+                if self._tick != last_tick:
+                    return self._tick
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return self._tick
+                self._cond.wait(timeout=remaining)
+
+    def _run(self) -> None:
+        next_ts = time.monotonic()
+        while not self._stop.is_set():
+            next_ts += self._interval
+            delay = next_ts - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            with self._lock:
+                self._tick += 1
+                self._cond.notify_all()
 
 
 class CameraRunner:
     _output_size = (720, 720)
 
-    def __init__(self, cam_id: str, cfg: CameraConfig):
+    def __init__(self, cam_id: str, cfg: CameraConfig, sync_clock: Optional[SyncClock] = None):
         self.cam_id = cam_id
         self.cfg = cfg
+        self._sync_clock = sync_clock
 
         self._calibration = CalibrationRuntime(cam_id, cfg.width, cfg.height)
         self._cap: Optional[cv2.VideoCapture] = None
@@ -38,11 +89,14 @@ class CameraRunner:
 
         self._lock = threading.Lock()
         self._frame_cond = threading.Condition(self._lock)
+        self._jpeg_cond = threading.Condition(self._lock)
         self._latest_jpeg: Optional[bytes] = None
+        self._latest_jpeg_seq = 0
         self._latest_frame: Optional[np.ndarray] = None
         self._latest_frame_seq = 0
         self._is_open = False
         self._last_jpeg_ts = 0.0
+        self._last_jpeg_tick = -1
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -70,6 +124,21 @@ class CameraRunner:
     def get_latest_jpeg(self) -> Optional[bytes]:
         with self._lock:
             return self._latest_jpeg
+
+    def get_latest_jpeg_with_seq(self) -> Tuple[Optional[bytes], int]:
+        with self._lock:
+            return self._latest_jpeg, self._latest_jpeg_seq
+
+    def wait_for_jpeg(self, last_seq: int, timeout: float = 1.0) -> Tuple[Optional[bytes], int]:
+        deadline = time.monotonic() + max(float(timeout), 0.0)
+        with self._lock:
+            while True:
+                if self._latest_jpeg is not None and self._latest_jpeg_seq != last_seq:
+                    return self._latest_jpeg, self._latest_jpeg_seq
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return self._latest_jpeg, self._latest_jpeg_seq
+                self._jpeg_cond.wait(timeout=remaining)
 
     def get_latest_frame(self) -> Optional[np.ndarray]:
         with self._lock:
@@ -153,6 +222,10 @@ class CameraRunner:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
             cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, int(self.cfg.buffer_size))
+            except Exception:
+                pass
 
             if not cap.isOpened():
                 cap.release()
@@ -219,21 +292,38 @@ class CameraRunner:
                     self._latest_frame_seq += 1
                     self._frame_cond.notify_all()
 
-                now = time.monotonic()
-                jpeg_interval = 1.0 / max(float(self.cfg.jpeg_fps), 1.0)
-                if now - self._last_jpeg_ts < jpeg_interval:
-                    time.sleep(0.001)
-                    continue
+                if self._sync_clock is not None:
+                    tick = self._sync_clock.get_tick()
+                    if tick == self._last_jpeg_tick:
+                        time.sleep(0.001)
+                        continue
+                    self._last_jpeg_tick = tick
+                else:
+                    now = time.monotonic()
+                    jpeg_interval = 1.0 / max(float(self.cfg.jpeg_fps), 1.0)
+                    if now - self._last_jpeg_ts < jpeg_interval:
+                        time.sleep(0.001)
+                        continue
 
                 frame = self._prepare_frame(frame)
                 frame = self._calibration.warp(frame)
 
-                ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                ok, buf = cv2.imencode(
+                    ".jpg",
+                    frame,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), int(self.cfg.jpeg_quality)],
+                )
                 if ok:
                     data = buf.tobytes()
                     with self._lock:
                         self._latest_jpeg = data
-                    self._last_jpeg_ts = now
+                        if self._sync_clock is not None:
+                            self._latest_jpeg_seq = self._last_jpeg_tick
+                        else:
+                            self._latest_jpeg_seq += 1
+                        self._jpeg_cond.notify_all()
+                    if self._sync_clock is None:
+                        self._last_jpeg_ts = now
 
                 time.sleep(0.001)
 
@@ -250,15 +340,22 @@ class CameraRunner:
 
 class CameraManager:
     def __init__(self, configs: Dict[str, CameraConfig]):
-        self.cams = {cam_id: CameraRunner(cam_id, cfg) for cam_id, cfg in configs.items()}
+        sync_fps = min((cfg.jpeg_fps for cfg in configs.values()), default=15)
+        self._sync_clock = SyncClock(sync_fps)
+        self.cams = {
+            cam_id: CameraRunner(cam_id, cfg, sync_clock=self._sync_clock)
+            for cam_id, cfg in configs.items()
+        }
 
     def start_all(self) -> None:
+        self._sync_clock.start()
         for cam in self.cams.values():
             cam.start()
 
     def stop_all(self) -> None:
         for cam in self.cams.values():
             cam.stop()
+        self._sync_clock.stop()
 
     def all_ready(self) -> bool:
         return all(cam.is_open() for cam in self.cams.values())
@@ -268,6 +365,18 @@ class CameraManager:
         if not cam:
             return None
         return cam.get_latest_jpeg()
+
+    def get_jpeg_with_seq(self, cam_id: str) -> Tuple[Optional[bytes], int]:
+        cam = self.cams.get(cam_id)
+        if not cam:
+            return None, 0
+        return cam.get_latest_jpeg_with_seq()
+
+    def wait_for_jpeg(self, cam_id: str, last_seq: int, timeout: float = 1.0) -> Tuple[Optional[bytes], int]:
+        cam = self.cams.get(cam_id)
+        if not cam:
+            return None, last_seq
+        return cam.wait_for_jpeg(last_seq, timeout=timeout)
 
     def capture_frame(self, cam_id: str, timeout: float = 1.0) -> Optional[np.ndarray]:
         cam = self.cams.get(cam_id)
