@@ -14,6 +14,7 @@ def calibration_path(cam_id: str) -> Path:
 
 
 def _default_calibration(cam_id: str, width: int, height: int) -> Dict[str, Any]:
+    # Single on-disk schema for all cameras; kept human-readable for manual inspection/editing.
     return {
         "camera_id": cam_id,
         "image_size": {"width": width, "height": height},
@@ -28,6 +29,7 @@ def _default_calibration(cam_id: str, width: int, height: int) -> Dict[str, Any]
 
 
 def ensure_calibration_file(cam_id: str, width: int, height: int) -> Path:
+    # Create a per-camera calibration file on first run so runtime code can assume it exists.
     path = calibration_path(cam_id)
     if path.exists():
         return path
@@ -39,6 +41,7 @@ def ensure_calibration_file(cam_id: str, width: int, height: int) -> Path:
 
 
 def load_calibration(cam_id: str, width: int, height: int) -> Dict[str, Any]:
+    # Fail-safe load: if file is corrupted/invalid, rewrite defaults to recover automatically.
     path = ensure_calibration_file(cam_id, width, height)
     try:
         with path.open("r", encoding="utf-8") as fh:
@@ -59,6 +62,7 @@ def update_warp_matrix(
     height: int,
     matrix: Optional[np.ndarray],
 ) -> Dict[str, Any]:
+    # Persists the homography to disk so calibration survives restarts.
     path = ensure_calibration_file(cam_id, width, height)
     data = load_calibration(cam_id, width, height)
 
@@ -84,6 +88,7 @@ def update_warp_matrix(
 
 
 def _rotation_homography(angle_deg: float, width: int, height: int) -> np.ndarray:
+    # Builds a pixel-space rotation about the image center (not the origin).
     if width <= 0 or height <= 0:
         raise ValueError("Image size must be positive for rotation.")
 
@@ -126,6 +131,7 @@ def rotate_warp_matrix(
     height: int,
     angle_deg: float,
 ) -> np.ndarray:
+    # Applies an additional rotation on top of the currently persisted warp, then saves it back.
     data = load_calibration(cam_id, width, height)
     warp = data.get("warp", {}) if isinstance(data, dict) else {}
     h_raw = warp.get("matrix")
@@ -144,6 +150,13 @@ def rotate_warp_matrix(
 
 
 class CalibrationRuntime:
+    """
+    Lightweight runtime wrapper around the on-disk calibration file.
+
+    Key property: it hot-reloads when the JSON file changes, allowing calibration
+    updates via API/UI without restarting camera threads.
+    """
+
     def __init__(self, cam_id: str, width: int, height: int):
         self.cam_id = cam_id
         self._width = width
@@ -158,6 +171,7 @@ class CalibrationRuntime:
         self._load()
 
     def apply(self, frame: np.ndarray) -> np.ndarray:
+        # Convenience for pipelines that want both undistort + warp in one step.
         try:
             self._maybe_reload()
             out = self.undistort(frame)
@@ -186,6 +200,7 @@ class CalibrationRuntime:
             self._mtime = self._path.stat().st_mtime
         except Exception:
             self._mtime = None
+        # Any calibration change invalidates cached undistort maps.
         self._undistort_maps = None
         self._undistort_key = None
 
@@ -208,11 +223,13 @@ class CalibrationRuntime:
         d = np.asarray(d_raw, dtype=np.float32).reshape(-1)
         if k.shape != (3, 3) or d.size < 4:
             return frame
+        # This runtime only supports fisheye 4-coefficient distortion (k1..k4).
         d = d[:4]
 
         size = (int(frame.shape[1]), int(frame.shape[0]))
         key = (size, k.tobytes(), d.tobytes())
         if self._undistort_key != key:
+            # Computing maps is expensive; cache and recompute only when parameters change.
             self._undistort_key = key
             r = np.eye(3, dtype=np.float32)
             map1, map2 = cv2.fisheye.initUndistortRectifyMap(
@@ -234,5 +251,7 @@ class CalibrationRuntime:
         if h.shape != (3, 3):
             return frame
 
+        # Warp is applied in the current frame's pixel space; callers should ensure
+        # a consistent prepared size if they want stable calibration results.
         size = (int(frame.shape[1]), int(frame.shape[0]))
         return cv2.warpPerspective(frame, h, size, flags=cv2.INTER_LINEAR)

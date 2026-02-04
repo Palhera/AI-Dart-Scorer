@@ -22,6 +22,8 @@ CLOSE_ITERS = 2
 
 
 def build_red_green_mask(img_bgr: np.ndarray) -> np.ndarray:
+    # HSV thresholding to isolate typical dartboard red/green sectors.
+    # The outer ellipse is fitted on these regions because they tend to form a strong ring.
     img_bgr = ensure_bgr_u8(img_bgr)
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
 
@@ -33,6 +35,8 @@ def build_red_green_mask(img_bgr: np.ndarray) -> np.ndarray:
 
 
 def detect_outer_ellipse(mask_u8: np.ndarray) -> Optional[Ellipse]:
+    # Finds the "best" ellipse candidate from red/green regions.
+    # Heuristics prefer: large area + centered near the image center (typical board framing).
     if mask_u8.ndim == 3:
         mask_u8 = cv2.cvtColor(mask_u8, cv2.COLOR_BGR2GRAY)
 
@@ -41,6 +45,7 @@ def detect_outer_ellipse(mask_u8: np.ndarray) -> Optional[Ellipse]:
         k += 1
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
 
+    # Closing helps connect fragmented sector blobs into a more continuous ring.
     if CLOSE_ITERS > 0:
         mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel, iterations=CLOSE_ITERS)
 
@@ -57,6 +62,7 @@ def detect_outer_ellipse(mask_u8: np.ndarray) -> Optional[Ellipse]:
     best_ellipse: Optional[Ellipse] = None
 
     for contour in contours:
+        # cv2.fitEllipse requires at least 5 points.
         if contour.shape[0] < 5:
             continue
 
@@ -67,6 +73,8 @@ def detect_outer_ellipse(mask_u8: np.ndarray) -> Optional[Ellipse]:
         (cx, cy), (a1, a2), angle = cv2.fitEllipse(contour)
         if a1 <= 0.0 or a2 <= 0.0:
             continue
+
+        # Reject off-center candidates (common failure mode: background objects with red/green).
         if math.hypot(cx - cx0, cy - cy0) > max_offset:
             continue
 

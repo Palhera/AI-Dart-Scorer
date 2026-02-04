@@ -9,6 +9,8 @@
       const req = indexedDB.open(DB_NAME, DB_VERSION);
 
       req.onupgradeneeded = () => {
+        // Create a tiny IndexedDB store to persist File System Access handles.
+        // Handles are origin-bound and must be stored in IndexedDB to be reusable across sessions.
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME);
@@ -20,6 +22,7 @@
     });
 
   const withStore = async (mode, fn) => {
+    // Small helper to run a single IDB request inside a transaction and return its result.
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, mode);
@@ -41,15 +44,20 @@
   };
 
   const saveDirectoryHandle = (handle) =>
+    // Persist the directory handle selected in Settings (used by Data Collection mode).
     withStore("readwrite", (store) => store.put(handle, HANDLE_KEY));
 
   const loadDirectoryHandle = () =>
+    // Restore the directory handle on app start (permission may still need to be re-granted).
     withStore("readonly", (store) => store.get(HANDLE_KEY));
 
   const clearDirectoryHandle = () =>
+    // Allows "reset" flows: force user to re-select a folder.
     withStore("readwrite", (store) => store.delete(HANDLE_KEY));
 
   const ensurePermission = async (handle, mode = "readwrite") => {
+    // Browser permissions are per-handle and can be "prompt"/"denied"/"granted".
+    // This helper upgrades "prompt" to "granted" by requesting permission when needed.
     if (!handle) return false;
     const opts = { mode };
     const current = await handle.queryPermission(opts);
@@ -57,6 +65,7 @@
     return (await handle.requestPermission(opts)) === "granted";
   };
 
+  // Global bridge used by settings.js + data-collection.js to avoid duplicating IDB logic.
   window.aiDartScorerFS = {
     saveDirectoryHandle,
     loadDirectoryHandle,

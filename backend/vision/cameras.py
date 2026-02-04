@@ -27,6 +27,14 @@ class CameraConfig:
 
 
 class SyncClock:
+    """
+    Shared metronome to align JPEG publishing across multiple cameras.
+
+    Rationale: the MJPEG streaming endpoint can poll per-camera "sequence numbers".
+    Using a shared tick makes cameras publish at the same cadence, which helps
+    multi-camera UIs stay visually synchronized and avoids per-camera drift.
+    """
+
     def __init__(self, fps: float):
         self._interval = 1.0 / max(float(fps), 1.0)
         self._stop = threading.Event()
@@ -52,6 +60,7 @@ class SyncClock:
             return self._tick
 
     def wait_for_tick(self, last_tick: int, timeout: float) -> int:
+        # Blocks until tick changes or timeout; used similarly to "wait for new frame".
         deadline = time.monotonic() + max(float(timeout), 0.0)
         with self._lock:
             while True:
@@ -75,6 +84,7 @@ class SyncClock:
 
 
 class CameraRunner:
+    # Internal "prepared" output resolution. Downstream calibration/warping assumes this size.
     _output_size = (720, 720)
 
     def __init__(self, cam_id: str, cfg: CameraConfig, sync_clock: Optional[SyncClock] = None):
@@ -82,11 +92,15 @@ class CameraRunner:
         self.cfg = cfg
         self._sync_clock = sync_clock
 
+        # CalibrationRuntime encapsulates per-camera intrinsics + current warp (homography).
+        # It is applied consistently in _prepare_frame() and during JPEG publishing.
         self._calibration = CalibrationRuntime(cam_id, cfg.width, cfg.height)
         self._cap: Optional[cv2.VideoCapture] = None
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
 
+        # Single lock protects both the latest raw frame and the latest encoded JPEG.
+        # Condition variables are used to let API handlers wait for "newer than seq".
         self._lock = threading.Lock()
         self._frame_cond = threading.Condition(self._lock)
         self._jpeg_cond = threading.Condition(self._lock)
@@ -130,6 +144,8 @@ class CameraRunner:
             return self._latest_jpeg, self._latest_jpeg_seq
 
     def wait_for_jpeg(self, last_seq: int, timeout: float = 1.0) -> Tuple[Optional[bytes], int]:
+        # Used by the MJPEG streaming endpoint: blocks until a new JPEG is available
+        # (seq differs from last_seq) or until timeout elapses.
         deadline = time.monotonic() + max(float(timeout), 0.0)
         with self._lock:
             while True:
@@ -141,12 +157,14 @@ class CameraRunner:
                 self._jpeg_cond.wait(timeout=remaining)
 
     def get_latest_frame(self) -> Optional[np.ndarray]:
+        # Always return a copy to prevent callers from mutating shared state.
         with self._lock:
             if self._latest_frame is None:
                 return None
             return self._latest_frame.copy()
 
     def capture_frame(self, timeout: float = 1.0) -> Optional[np.ndarray]:
+        # Waits for a newer raw frame than the one observed at call time.
         deadline = time.monotonic() + max(float(timeout), 0.0)
         with self._lock:
             start_seq = self._latest_frame_seq
@@ -161,12 +179,14 @@ class CameraRunner:
                 self._frame_cond.wait(timeout=remaining)
 
     def capture_prepared_frame(self, timeout: float = 1.0) -> Optional[np.ndarray]:
+        # Convenience for calibration endpoints: returns undistorted/cropped/resized frame.
         frame = self.capture_frame(timeout=timeout)
         if frame is None:
             return None
         return self._prepare_frame(frame)
 
     def calibrate_homography(self) -> Optional[np.ndarray]:
+        # Auto-calibration from the current prepared frame; persists the resulting warp.
         frame = self.get_latest_frame()
         if frame is None:
             return None
@@ -180,6 +200,7 @@ class CameraRunner:
         return matrix
 
     def rotate_homography(self, angle_deg: float) -> Optional[np.ndarray]:
+        # Rotation is applied to the persisted warp for the prepared output size.
         width, height = self._output_size
         try:
             return rotate_warp_matrix(self.cam_id, width, height, angle_deg)
@@ -187,6 +208,7 @@ class CameraRunner:
             return None
 
     def reset_homography(self) -> bool:
+        # Clears persisted warp (back to identity) for the prepared output size.
         width, height = self._output_size
         try:
             update_warp_matrix(self.cam_id, width, height, None)
@@ -195,6 +217,8 @@ class CameraRunner:
             return False
 
     def _center_crop_square(self, frame: np.ndarray) -> np.ndarray:
+        # Cropping before resizing keeps geometry symmetric around the optical center,
+        # which matters for homography/board-centered calibrations.
         h, w = frame.shape[:2]
         if w == h:
             return frame
@@ -205,6 +229,7 @@ class CameraRunner:
         return frame[y0 : y0 + w, :]
 
     def _prepare_frame(self, frame: np.ndarray) -> np.ndarray:
+        # Defines the canonical coordinate system for all downstream vision steps.
         frame = self._calibration.undistort(frame)
         frame = self._center_crop_square(frame)
         if frame.shape[1] != self._output_size[0] or frame.shape[0] != self._output_size[1]:
@@ -212,6 +237,8 @@ class CameraRunner:
         return frame
 
     def _open(self) -> None:
+        # Try platform-specific backends in order; camera indices/backends can vary widely
+        # across OSes and drivers, so we probe until we can reliably read frames.
         backends = self._candidate_backends()
 
         for backend in backends:
@@ -231,6 +258,7 @@ class CameraRunner:
                 cap.release()
                 continue
 
+            # Some backends report "opened" but fail to deliver frames initially.
             ok = False
             for _ in range(5):
                 ok, _ = cap.read()
@@ -274,6 +302,8 @@ class CameraRunner:
         return backends or [cv2.CAP_ANY]
 
     def _run(self) -> None:
+        # Dedicated thread: reads frames as fast as the driver provides them, and
+        # publishes (1) latest raw frame and (2) rate-limited JPEGs for streaming.
         while not self._stop.is_set():
             try:
                 if self._cap is None or not self._cap.isOpened():
@@ -281,6 +311,7 @@ class CameraRunner:
 
                 ok, frame = self._cap.read()
                 if not ok:
+                    # Treat read failures as transient and reopen after a short backoff.
                     self._cap.release()
                     self._cap = None
                     self._is_open = False
@@ -292,6 +323,9 @@ class CameraRunner:
                     self._latest_frame_seq += 1
                     self._frame_cond.notify_all()
 
+                # JPEG publish pacing:
+                # - if SyncClock is provided, publish at shared ticks
+                # - otherwise, use per-camera wall-clock throttling
                 if self._sync_clock is not None:
                     tick = self._sync_clock.get_tick()
                     if tick == self._last_jpeg_tick:
@@ -317,10 +351,8 @@ class CameraRunner:
                     data = buf.tobytes()
                     with self._lock:
                         self._latest_jpeg = data
-                        if self._sync_clock is not None:
-                            self._latest_jpeg_seq = self._last_jpeg_tick
-                        else:
-                            self._latest_jpeg_seq += 1
+                        # Sequence numbers are used by clients to wait for "new" frames.
+                        self._latest_jpeg_seq = self._last_jpeg_tick if self._sync_clock is not None else (self._latest_jpeg_seq + 1)
                         self._jpeg_cond.notify_all()
                     if self._sync_clock is None:
                         self._last_jpeg_ts = now
@@ -328,6 +360,7 @@ class CameraRunner:
                 time.sleep(0.001)
 
             except Exception:
+                # Fail closed: release the capture and retry after a backoff.
                 self._is_open = False
                 try:
                     if self._cap is not None:
@@ -340,6 +373,7 @@ class CameraRunner:
 
 class CameraManager:
     def __init__(self, configs: Dict[str, CameraConfig]):
+        # Use the minimum jpeg_fps so all cameras can comfortably follow the shared clock.
         sync_fps = min((cfg.jpeg_fps for cfg in configs.values()), default=15)
         self._sync_clock = SyncClock(sync_fps)
         self.cams = {

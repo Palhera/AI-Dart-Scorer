@@ -24,6 +24,8 @@ SUPPORT_SAMPLES = 160
 
 
 def build_white_mask(img_bgr: np.ndarray) -> np.ndarray:
+    # Produces a binary mask intended to keep bright/white board markings
+    # while suppressing background texture and noise.
     img_bgr = ensure_bgr_u8(img_bgr)
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     _, mask_u8 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
@@ -33,6 +35,8 @@ def build_white_mask(img_bgr: np.ndarray) -> np.ndarray:
         k += 1
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
 
+    # Morphology cleans up small speckles (open) and fills small gaps (close),
+    # improving Hough line stability.
     if OPEN_ITERS > 0:
         mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, kernel, iterations=OPEN_ITERS)
     if CLOSE_ITERS > 0:
@@ -42,6 +46,7 @@ def build_white_mask(img_bgr: np.ndarray) -> np.ndarray:
 
 
 def _select_unique_lines(raw_lines: Optional[np.ndarray]) -> List[LineRT]:
+    # Hough can return many near-duplicates; keep only a small diverse set.
     if raw_lines is None:
         return []
 
@@ -57,6 +62,8 @@ def _select_unique_lines(raw_lines: Optional[np.ndarray]) -> List[LineRT]:
 
 
 def _line_support(edges: np.ndarray, rho: float, theta: float) -> float:
+    # Estimates how well a candidate Hough line is supported by edge pixels.
+    # This becomes a weight ("accuracy") later when building homography constraints.
     h, w = edges.shape[:2]
     pts = line_border_points(rho, theta, w, h)
     if len(pts) < 2:
@@ -79,6 +86,7 @@ def _line_support(edges: np.ndarray, rho: float, theta: float) -> float:
 
 
 def detect_lines_from_mask(mask_u8: np.ndarray) -> dict:
+    # Detects prominent straight lines in a precomputed binary mask using Hough transform.
     if mask_u8.ndim == 3:
         mask_u8 = cv2.cvtColor(mask_u8, cv2.COLOR_BGR2GRAY)
 

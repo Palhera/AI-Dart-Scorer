@@ -21,6 +21,7 @@
   const ctx = canvas.getContext("2d");
 
   const setStatus = (message, state = "info") => {
+    // statusEl.dataset.state is used for styling (ok/info/busy/error).
     if (!statusEl) return;
     statusEl.textContent = message;
     statusEl.dataset.state = state;
@@ -34,6 +35,7 @@
   };
 
   const formatId = (id) => {
+    // Zero-pad to keep filenames sortable by lexicographic order.
     const value = String(id);
     return value.length >= 5 ? value : value.padStart(5, "0");
   };
@@ -44,6 +46,10 @@
   };
 
   const updateCaptureState = () => {
+    // Capture is only allowed when:
+    // - not already saving
+    // - folder exists and is accessible
+    // - all camera streams are live (so canvas capture has pixels)
     captureBtn.disabled = saving || folderMissing || !camerasReady;
   };
 
@@ -53,6 +59,7 @@
   };
 
   const setStream = (img, camId) => {
+    // Cache-bust to force reconnection and avoid stale frames.
     img.src = `/api/stream/${camId}?t=${Date.now()}`;
   };
 
@@ -65,6 +72,7 @@
 
     img.onload = () => {
       setLiveUI(camId, true);
+      // Count the first successful load per camera to know when all streams are ready.
       if (!liveState[camId]) {
         liveState[camId] = true;
         onLive();
@@ -78,6 +86,7 @@
   };
 
   const waitBackendReady = async () => {
+    // Wait for backend startup (camera threads initialized) before attaching MJPEG streams.
     while (true) {
       try {
         const r = await fetch("/api/status", { cache: "no-store" });
@@ -88,6 +97,9 @@
   };
 
   const ensureFolderHandle = async (requestPermission = true) => {
+    // Uses a small abstraction layer (window.aiDartScorerFS) so the same UI can run:
+    // - in browsers supporting File System Access API
+    // - or in an app shell that provides a compatible bridge.
     const fsApi = window.aiDartScorerFS;
     if (!fsApi?.loadDirectoryHandle) {
       folderMissing = true;
@@ -115,6 +127,7 @@
       folderMissing = false;
       const current = await dirHandle.queryPermission({ mode: "readwrite" });
       if (current !== "granted") {
+        // On some browsers, write permission must be explicitly granted per handle.
         if (!requestPermission) {
           folderReady = false;
           updateCaptureState();
@@ -140,12 +153,15 @@
   };
 
   const findNextId = (set, start) => {
+    // IDs are monotonically increased, skipping any already present on disk.
     let id = Math.max(1, start);
     while (set.has(id)) id += 1;
     return id;
   };
 
   const scanExistingIds = async () => {
+    // Build an index of already-captured sample IDs by scanning the folder contents.
+    // Filename convention: "00001_cam1.png" etc. (cam suffix is used in the regex).
     const handle = await ensureFolderHandle(false);
     if (!handle) return;
 
@@ -181,6 +197,8 @@
   };
 
   const grabPngFromImage = async (img) => {
+    // Captures the current <img> contents by drawing to canvas, then encoding PNG.
+    // This is "best effort": it captures what the browser currently has decoded.
     if (!ctx) throw new Error("Canvas is not available.");
     const w = img.naturalWidth;
     const h = img.naturalHeight;
@@ -200,6 +218,7 @@
   };
 
   const writeBlob = async (handle, fileName, blob) => {
+    // Atomic-ish write: createWritable() will replace the file contents.
     const fileHandle = await handle.getFileHandle(fileName, { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(blob);
@@ -228,6 +247,8 @@
       const id = nextId;
       const filePrefix = formatId(id);
 
+      // Save 3 synchronized-ish samples (one per camera). Each is a browser-side capture
+      // of the current MJPEG frame, not a backend timestamped snapshot.
       for (const camId of CAMS) {
         const img = document.getElementById(`dc-${camId}`);
         if (!img) throw new Error(`Missing stream for ${camId}.`);
@@ -248,6 +269,7 @@
   };
 
   const isInteractiveTarget = (target) => {
+    // Prevent spacebar-to-capture from interfering with form controls and links.
     if (!target || !target.tagName) return false;
     if (target.isContentEditable) return true;
     const tag = target.tagName.toUpperCase();
@@ -263,6 +285,7 @@
   captureBtn.addEventListener("click", captureImages);
 
   document.addEventListener("keydown", (event) => {
+    // Convenience shortcut: press Space anywhere (except interactive controls) to capture.
     if (event.code !== "Space" || event.repeat) return;
     if (isInteractiveTarget(event.target)) return;
     event.preventDefault();
