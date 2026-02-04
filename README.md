@@ -25,6 +25,9 @@ Open:
 ## Configure cameras
 Edit camera indices and resolution in `backend/core/lifespan.py`.
 
+## Documentation
+- `PROJECT_GUIDE.md` (architecture, flows, schemas, and maintenance notes)
+
 ## LAN run
 ```bash
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1
