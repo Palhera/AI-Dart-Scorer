@@ -147,6 +147,8 @@ class CameraRunner:
 
         for backend in backends:
             cap = cv2.VideoCapture(self.cfg.index, backend)
+            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+            cap.set(cv2.CAP_PROP_FOURCC, fourcc)
 
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)

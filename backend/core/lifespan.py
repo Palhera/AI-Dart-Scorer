@@ -9,9 +9,9 @@ async def _init_cameras(app: FastAPI):
 
     app.state.camera_manager = CameraManager(
         {
-            "cam1": CameraConfig(index=0, width=720, height=720, fps=30),
-            "cam2": CameraConfig(index=1, width=720, height=720, fps=30),
-            "cam3": CameraConfig(index=2, width=720, height=720, fps=30),
+            "cam1": CameraConfig(index=0, width=860, height=640, fps=30),
+            "cam2": CameraConfig(index=4, width=860, height=640, fps=30),
+            "cam3": CameraConfig(index=6, width=860, height=640, fps=30),
         }
     )
     app.state.camera_manager.start_all()
