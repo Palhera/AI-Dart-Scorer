@@ -173,6 +173,32 @@ section:last-of-type {
   display: block;
 }
 
+.cam-tile.is-busy::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.cam-tile.is-busy::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  margin-left: -22px;
+  margin-top: -22px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--accent);
+  animation: cam-spinner 0.8s linear infinite;
+  z-index: 4;
+  pointer-events: none;
+}
+
 .cam-overlay {
   position: absolute;
   left: 10px;
@@ -477,6 +503,12 @@ section:last-of-type {
 
 .debug-status.is-error {
   color: #ff6b6b;
+}
+
+@keyframes cam-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 900px) {

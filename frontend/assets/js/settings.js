@@ -199,6 +199,15 @@
 
   if (!modal || !modalImg || !modalTile) return;
 
+  const setBusy = (camId, busy) => {
+    if (!camId) return;
+    const tile = document.getElementById(camId)?.closest(".cam-tile");
+    tile?.classList.toggle("is-busy", busy);
+    if (currentCam === camId) {
+      modalTile.classList.toggle("is-busy", busy);
+    }
+  };
+
   const setModalLive = (live) => modalTile.classList.toggle("is-live", live);
   let modalReady = false;
 
@@ -628,6 +637,7 @@
     document.body.style.overflow = "";
     modalImg.removeAttribute("src");
     modalTile.classList.remove("is-live");
+    modalTile.classList.remove("is-busy");
     modalReady = false;
     if (closingCam) {
       const key = `modal:${closingCam}`;
@@ -651,10 +661,13 @@
     if (e.target.closest("[data-close-modal]")) return closeModal();
     const actionBtn = e.target.closest("[data-modal-action]");
     if (actionBtn && currentCam) {
+      const camId = currentCam;
       const action = actionBtn.dataset.modalAction;
+      const showSpinner = action === "calibrate";
+      if (showSpinner) setBusy(camId, true);
       actionBtn.disabled = true;
       try {
-        await callBackend(currentCam, action);
+        await callBackend(camId, action);
         if (action === "calibrate" || action === "reset") {
           const rect = modalTile.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) resetQuad(rect.width, rect.height);
@@ -662,9 +675,10 @@
           scheduleDraw();
         }
         // Refresh snapshots after any calibration change.
-        await refreshSnapshots(currentCam);
+        await refreshSnapshots(camId);
       } finally {
         actionBtn.disabled = false;
+        if (showSpinner) setBusy(camId, false);
       }
     }
   });
