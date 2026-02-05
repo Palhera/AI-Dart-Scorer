@@ -16,7 +16,7 @@ from backend.vision.calibration_store import (
 
 @dataclass
 class CameraConfig:
-    index: int
+    device: str
     width: int = 720
     height: int = 720
     fps: int = 30
@@ -170,7 +170,8 @@ class CameraRunner:
         backends = self._candidate_backends()
 
         for backend in backends:
-            cap = cv2.VideoCapture(self.cfg.index, backend)
+            src = self.cfg.device
+            cap = cv2.VideoCapture(src, backend)
             fourcc = cv2.VideoWriter_fourcc(*"MJPG")
             cap.set(cv2.CAP_PROP_FOURCC, fourcc)
 
@@ -208,11 +209,11 @@ class CameraRunner:
     def _candidate_backends() -> List[int]:
         system = platform.system().lower()
         if system == "windows":
-            raw = [cv2.CAP_DSHOW, getattr(cv2, "CAP_MSMF", None), cv2.CAP_ANY]
+            raw = [cv2.CAP_DSHOW, getattr(cv2, "CAP_MSMF", None)]
         elif system == "linux":
-            raw = [getattr(cv2, "CAP_V4L2", None), getattr(cv2, "CAP_GSTREAMER", None), cv2.CAP_ANY]
+            raw = [getattr(cv2, "CAP_V4L2", None), getattr(cv2, "CAP_GSTREAMER", None)]
         elif system == "darwin":
-            raw = [getattr(cv2, "CAP_AVFOUNDATION", None), cv2.CAP_ANY]
+            raw = [getattr(cv2, "CAP_AVFOUNDATION", None)]
         else:
             raw = [cv2.CAP_ANY]
 

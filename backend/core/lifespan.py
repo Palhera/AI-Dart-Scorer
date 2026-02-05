@@ -12,9 +12,18 @@ async def lifespan(app: FastAPI):
     # to request handlers without relying on globals.
     app.state.camera_manager = CameraManager(
         {
-            "cam1": CameraConfig(index=0, width=1280, height=720, fps=30),
-            "cam2": CameraConfig(index=4, width=1280, height=720, fps=30),
-            "cam3": CameraConfig(index=6, width=1280, height=720, fps=30),
+            "cam1": CameraConfig(
+                device="/dev/v4l/by-path/platform-xhci-hcd.2.auto-usb-0:1.2.4:1.0-video-index0",
+                width=1280, height=720, fps=30
+            ),
+            "cam2": CameraConfig(
+                device="/dev/v4l/by-path/platform-xhci-hcd.2.auto-usb-0:1.3:1.0-video-index0",
+                width=1280, height=720, fps=30
+            ),
+            "cam3": CameraConfig(
+                device="/dev/v4l/by-path/platform-xhci-hcd.2.auto-usb-0:1.4:1.0-video-index0",
+                width=1280, height=720, fps=30
+            ),
         }
     )
     app.state.ready = True
